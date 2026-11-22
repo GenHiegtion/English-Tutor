@@ -1,0 +1,22 @@
+# Sample scenarios shaped like Talkwise's `scenarios` table, for the CLI and tests.
+- id: cafe-order
+  title: Ordering at a cafe
+  level: A2
+  goal: Order a drink and a snack politely and pay the bill.
+  goal_vi: Gọi đồ uống và món ăn nhẹ một cách lịch sự rồi thanh toán.
+  opener: "Hi there! Welcome to Sunny Cafe. What can I get for you today?"
+  targets: [would like, a cup of, how much, to go]
+- id: job-interview
+  title: A job interview
+  level: B1
+  goal: Introduce yourself and answer common interview questions.
+  goal_vi: Giới thiệu bản thân và trả lời các câu hỏi phỏng vấn thường gặp.
+  opener: "Good morning! Please have a seat. Could you tell me a little about yourself?"
+  targets: [experience, strength, responsible for, I'm looking for]
+- id: lost-directions
+  title: Asking for directions
+  level: A1
+  goal: Ask how to get to a place and understand simple directions.
+  goal_vi: Hỏi đường đến một địa điểm và hiểu chỉ dẫn đơn giản.
+  opener: "Hello! You look a little lost. Can I help you?"
+  targets: [turn left, turn right, straight, next to]
