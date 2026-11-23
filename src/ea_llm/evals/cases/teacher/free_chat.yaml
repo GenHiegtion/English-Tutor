@@ -1,0 +1,223 @@
+# Free chat cases (text channel).
+# TODO(human): drafted by the developers; an English teacher must review every `expect` block and
+# then set reviewed_by to their name.
+reviewed_by: PLACEHOLDER
+cases:
+  - id: fc-topic-chosen-correct
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    interests: [football, music]
+    learner: "I like football very much"
+    expect:
+      no_correction: true
+      ends_with_question: true
+    judge: [conversation_flow, no_overcorrection]
+    tags: [learner-picks-topic]
+    notes: A correct sentence; react and ask an open question about football.
+
+  - id: fc-no-topic-uses-interests
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    interests: [cooking]
+    learner: "ko biet noi gi"
+    expect:
+      ends_with_question: true
+      no_correction: true
+      must_include_any: ["cook", "cooked", "cooking", "food", "dish", "eat"]
+    judge: [conversation_flow, natural_vietnamese]
+    tags: [no-topic, vietnamese-abbreviation]
+    notes: The learner has no idea; suggest a topic from the interests.
+
+  - id: fc-one-word-answers
+    mode: free_chat
+    persona: minh
+    cefr: A2
+    interests: [travel]
+    history:
+      - learner: "travel"
+        teacher: "<en>Nice! Where did you go last year?</en>"
+      - learner: "Da Lat"
+        teacher: "<en>Da Lat is beautiful! What did you do there?</en>"
+    learner: "eat"
+    expect:
+      ends_with_question: true
+    judge: [conversation_flow, level_appropriate]
+    tags: [one-word-answers]
+    notes: After several one-word answers, help the learner say a full sentence.
+
+  - id: fc-past-tense
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    learner: "Yesterday I go to the cinema with my sister"
+    expect:
+      must_correct: ["went"]
+      max_corrections: 1
+      ends_with_question: true
+    judge: [correction_quality, explanation_correct, conversation_flow]
+    tags: [common-error]
+    notes: Missing past tense with "yesterday".
+
+  - id: fc-two-errors
+    mode: free_chat
+    persona: chi
+    cefr: A2
+    learner: "My brother play guitar very good"
+    expect:
+      must_correct: ["plays", "well"]
+      max_corrections: 2
+    judge: [correction_quality, explanation_correct]
+    tags: [common-error]
+    notes: Third-person -s and adverb well; both fit in one turn.
+
+  - id: fc-too-many-errors
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    learner: "She don't like go to school because teacher is very strict"
+    expect:
+      must_correct: ["doesn't|does not"]
+      max_corrections: 2
+    judge: [correction_quality, explanation_correct]
+    tags: [common-error, prioritise]
+    notes: Three errors; the teacher picks at most two, starting with don't -> doesn't.
+
+  - id: fc-i-am-agree
+    mode: free_chat
+    persona: minh
+    cefr: B1
+    learner: "I am agree with you, football is the best sport in the world"
+    expect:
+      must_correct: ["I agree"]
+      max_corrections: 1
+    judge: [correction_quality, explanation_correct, level_appropriate]
+    tags: [common-error]
+    notes: "\"I am agree\" is a classic Vietnamese-speaker error."
+
+  - id: fc-variant-colour
+    mode: free_chat
+    persona: lan
+    cefr: B1
+    learner: "My favourite colour is blue because it reminds me of the sea"
+    expect:
+      no_correction: true
+    judge: [no_overcorrection, conversation_flow]
+    tags: [accepted-variant]
+    notes: British spelling is correct.
+
+  - id: fc-variant-at-the-weekend
+    mode: free_chat
+    persona: minh
+    cefr: B1
+    learner: "I usually play tennis with my colleagues at the weekend"
+    expect:
+      no_correction: true
+    judge: [no_overcorrection, conversation_flow]
+    tags: [accepted-variant]
+    notes: "\"at the weekend\" (British) is correct."
+
+  - id: fc-variant-different-than
+    mode: free_chat
+    persona: hung
+    cefr: B2
+    learner: "Life in the city is quite different than life in the countryside"
+    expect:
+      no_correction: true
+    judge: [no_overcorrection, conversation_flow]
+    tags: [accepted-variant]
+    notes: "\"different than\" is accepted in American English."
+
+  - id: fc-b2-correct-english-only
+    mode: free_chat
+    persona: hung
+    cefr: B2
+    learner: "I've been thinking about changing my job recently"
+    expect:
+      no_correction: true
+      vi_ratio: [0.0, 0.2]
+      ends_with_question: true
+    judge: [conversation_flow, level_appropriate, no_overcorrection]
+    tags: [correct-sentence]
+    notes: A correct B2 sentence; reply in English with a follow-up question.
+
+  - id: fc-c1-conditional
+    mode: free_chat
+    persona: chi
+    cefr: C1
+    learner: "If I would have known about the traffic, I would have left home earlier"
+    expect:
+      must_correct: ["had known"]
+      vi_ratio: [0.0, 0.35]
+    judge: [correction_quality, explanation_correct, level_appropriate]
+    tags: [c1-learner]
+    notes: Third conditional; a C1 learner needs only a brief Vietnamese note.
+
+  - id: fc-kid-vietnamese-no-diacritics
+    mode: free_chat
+    persona: chi
+    age_band: under_18
+    cefr: A1
+    interests: [music]
+    learner: "e ko biet noi the nao ve so thich cua minh"
+    expect:
+      require_vi: true
+      no_correction: true
+      max_sentences: 3
+    judge: [natural_vietnamese, conversation_flow, level_appropriate]
+    tags: [vietnamese-abbreviation, kid-address]
+    notes: Understand Vietnamese without diacritics; never correct it; pronouns chị/em.
+
+  - id: fc-vietnamese-word-inserted
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    learner: "Yesterday I went to the chợ with my mom"
+    expect:
+      must_include_any: ["market"]
+    judge: [correction_quality, conversation_flow]
+    tags: [vietnamese-word-in-english]
+    notes: Give the English word for the Vietnamese word inside the sentence.
+
+  - id: fc-same-mistake-twice
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    history:
+      - learner: "Yesterday I go to the park"
+        teacher: "<vi>Bạn kể rõ lắm, chỉ cần nói went thay cho go vì yesterday là chuyện đã qua.</vi><en>Yesterday I went to the park.</en><en>What did you do there?</en>"
+    learner: "I play football with my friends and then I go home"
+    expect:
+      must_correct: ["played|went"]
+    judge: [checks_understanding, correction_quality, explanation_correct]
+    tags: [check-understanding]
+    notes: The same past-tense mistake again; the teacher should check understanding briefly.
+
+  - id: fc-senior-address
+    mode: free_chat
+    persona: minh
+    age_band: senior
+    cefr: A2
+    learner: "Hello, I am retired teacher and I want learn English for travel"
+    expect:
+      must_correct: ["a retired teacher|want to learn"]
+      max_corrections: 2
+    judge: [natural_vietnamese, correction_quality]
+    tags: [senior-address]
+    notes: An older learner; pronouns cháu/bác, warm and respectful.
+
+  - id: fc-correct-a1-simple
+    mode: free_chat
+    persona: lan
+    age_band: under_18
+    cefr: A1
+    interests: [animals]
+    learner: "I have a cat. Her name is Mimi."
+    expect:
+      no_correction: true
+      ends_with_question: true
+      no_flags: [cefr_overshoot]
+    judge: [conversation_flow, level_appropriate, no_overcorrection]
+    tags: [correct-sentence, kid-address]
+    notes: A correct A1 sentence; a simple question about the cat, English under 8 words.

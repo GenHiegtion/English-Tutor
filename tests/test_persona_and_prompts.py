@@ -63,6 +63,10 @@ def test_layers_1_and_2_are_byte_identical_across_users():
 def test_session_block_is_deterministic_and_persona_driven():
     snap = snapshot("u1", PERSONAS["lan"], age="under_18", name="Mai")
     one = render_session_block(PERSONAS["lan"], snap.address, snap.learner, snap.scenario)
+    kid = snap.learner.model_copy(update={"age_band": "under_18"})
+    assert "Age group: under 18" in render_session_block(
+        PERSONAS["lan"], snap.address, kid, snap.scenario
+    )
     two = render_session_block(PERSONAS["lan"], snap.address, snap.learner, snap.scenario)
     assert one == two
     assert '"cô"' in one and '"em"' in one and "A2" in one and "Mai" in one
@@ -72,7 +76,7 @@ def test_session_block_is_deterministic_and_persona_driven():
 def test_static_prompt_is_long_enough_to_cache_and_versioned():
     bundle = static_bundle("text", "scenario")
     assert len(bundle.text) / 3 > 512  # well above Haiku's minimum cacheable prefix
-    assert bundle.version.startswith("teacher.text.scenario@v1#")
+    assert bundle.version.startswith("teacher.text.scenario#")
     assert "channel: text chat" in bundle.text.lower()
     assert "Mode: scenario" in bundle.text
 

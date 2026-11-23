@@ -33,13 +33,22 @@ def make_service(stores, primary, fallback=None, **cfg):
     )
 
 
-def turn_ctx(turn_id, text, *, session_id="s1", user_id="u1", persona_id="lan", scenario=None):
+def turn_ctx(
+    turn_id,
+    text,
+    *,
+    session_id="s1",
+    user_id="u1",
+    persona_id="lan",
+    scenario=None,
+    mode="scenario",
+):
     return TurnContext(
         session_id=session_id,
         user_id=user_id,
         turn_id=turn_id,
         channel="text",
-        mode="scenario",
+        mode=mode,
         persona_id=persona_id,
         scenario=scenario,
         learner_input=LearnerInput(text=text, source="typed") if text is not None else None,

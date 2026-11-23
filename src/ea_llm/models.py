@@ -89,4 +89,4 @@ class TurnRecord(BaseModel):
 
     turn_id: str
     messages: list[StoredMessage]
-    usage: UsageRecord | None = None
+    usage: list[UsageRecord] = []  # one row per LLM call: the answer, plus any cancelled call

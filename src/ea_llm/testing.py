@@ -22,6 +22,7 @@ def reply(
     *,
     stop: str | None = None,
     chunk: int = 7,
+    cost: float | None = 0.0001,
 ) -> list[LLMEvent]:
     """Build the events of one model reply: text in small chunks, tools, usage and stop."""
     events: list[LLMEvent] = [
@@ -37,7 +38,7 @@ def reply(
             output_tokens=20,
             cache_read_tokens=0,
             cache_write_tokens=0,
-            cost_usd=0.0001,
+            cost_usd=cost,
         )
     )
     events.append(Stop(reason=stop or ("tool_use" if calls else "end_turn")))  # type: ignore[arg-type]
@@ -51,11 +52,21 @@ def failure(kind: str = "server") -> list[LLMEvent]:
 class FakeProvider:
     """Plays scripted replies in order and records every request it receives."""
 
-    def __init__(self, scripts: list[list[LLMEvent]], *, first_token_delay: float = 0.0) -> None:
+    def __init__(
+        self,
+        scripts: list[list[LLMEvent]],
+        *,
+        first_token_delay: float = 0.0,
+        model: str = "fake/model",
+    ) -> None:
         self._scripts = list(scripts)
+        self.model = model
         self.first_token_delay = first_token_delay
         self.requests: list[LLMRequest] = []
         self.cancelled = 0
+
+    def model_for(self, role: str) -> str:
+        return self.model
 
     async def stream(self, req: LLMRequest) -> AsyncIterator[LLMEvent]:
         self.requests.append(req)

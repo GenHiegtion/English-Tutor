@@ -1,0 +1,41 @@
+# Terms the teacher must never say (blocking guard, every learner). A segment containing one is
+# dropped together with the rest of the turn and replaced by the fixed "back to the lesson" line.
+# Matching is case-insensitive on whole words or phrases.
+# TODO(human): starter list written by the developers; a reviewer must extend and approve it
+# before production, especially for learners under 18.
+reviewed_by: PLACEHOLDER
+terms:
+  en:
+    - fuck
+    - fucking
+    - shit
+    - bitch
+    - cunt
+    - dick
+    - pussy
+    - whore
+    - slut
+    - porn
+    - porno
+    - pornography
+    - rape
+    - cocaine
+    - heroin
+    - kill yourself
+    - suicide
+  vi:
+    - địt
+    - đụ
+    - đéo
+    - lồn
+    - buồi
+    - cặc
+    - đĩ
+    - mẹ kiếp
+    - vãi lồn
+    - vcl
+    - đm
+    - khiêu dâm
+    - ma túy
+    - tự tử
+    - tự sát

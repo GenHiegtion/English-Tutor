@@ -237,7 +237,7 @@ async def test_complete_json():
     assert data == {"a": 1} and report.output_tokens == 5
     sent = client.calls[0]
     assert sent["output_config"]["format"]["type"] == "json_schema" and sent["model"].endswith(
-        "sonnet-5.5"
+        "haiku-5.5"
     )
 
 

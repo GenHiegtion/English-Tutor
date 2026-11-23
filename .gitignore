@@ -29,3 +29,6 @@ htmlcov/
 
 # Documents
 docs/
+
+# Eval run outputs (results, judge files, reports)
+eval_runs/

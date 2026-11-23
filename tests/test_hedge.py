@@ -2,7 +2,7 @@ import asyncio
 import time
 
 from ea_llm.providers.base import CallMeta, LLMRequest, ProviderError, Stop, TextDelta
-from ea_llm.teacher.hedge import hedged_stream
+from ea_llm.teacher.hedge import LoserCancelled, hedged_stream
 from ea_llm.testing import FakeProvider, failure, reply
 
 REQ = LLMRequest(
@@ -37,7 +37,8 @@ async def test_fast_primary_never_starts_fallback():
 async def test_slow_primary_loses_to_fallback_and_is_cancelled():
     slow = FakeProvider([reply("slow")], first_token_delay=1.0)
     events = await run(slow, FakeProvider([reply("fast")]))
-    assert sources(events) == {"fallback"}
+    assert events[0] == (LoserCancelled(source="primary"), "primary")
+    assert sources(events[1:]) == {"fallback"}
     await asyncio.sleep(0.01)
     assert slow.cancelled == 1
 
@@ -47,6 +48,7 @@ async def test_primary_error_starts_fallback_immediately():
     events = await run(FakeProvider([failure("rate_limit")]), FakeProvider([reply("ok")]), hedge=5)
     assert time.monotonic() - started < 1
     assert sources(events) == {"fallback"}
+    assert not any(isinstance(e, LoserCancelled) for e, _ in events)  # the primary had failed
 
 
 async def test_both_fail_yields_error():

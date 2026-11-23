@@ -104,6 +104,10 @@ LLMEvent = TextDelta | ToolCall | UsageReport | Stop | ProviderError
 
 
 class LLMProvider(Protocol):
+    def model_for(self, role: str) -> str:
+        """Model id this provider calls for ``role`` (used to price cancelled calls)."""
+        ...
+
     def stream(self, req: LLMRequest) -> AsyncIterator[LLMEvent]: ...
 
     async def complete_json(self, req: LLMRequest) -> tuple[dict, UsageReport]: ...

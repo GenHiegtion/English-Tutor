@@ -127,10 +127,13 @@ class OpenRouterProvider:
     def with_model(self, model: str) -> OpenRouterProvider:
         return OpenRouterProvider(routes=self.routes, model=model, client=self.client)
 
+    def model_for(self, role: str) -> str:
+        return self.model_override or self.routes[role].model
+
     # ---------------------------------------------------------------- request
     def build_params(self, req: LLMRequest) -> dict[str, Any]:
         route = self.routes[req.role]
-        model = self.model_override or route.model
+        model = self.model_for(req.role)
         provider_opts: dict[str, Any] = {"allow_fallbacks": False, "data_collection": "deny"}
         if model.startswith("anthropic/"):
             provider_opts["order"] = ["anthropic"]

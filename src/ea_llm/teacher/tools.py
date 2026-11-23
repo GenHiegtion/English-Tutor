@@ -17,9 +17,16 @@ class AskRepeatArgs(BaseModel):
 
 
 class AskQuestionArgs(BaseModel):
-    question: str
-    expected_structure: str
-    model_answer: str | None = None
+    question: str = Field(
+        description="The question you just asked the learner, copied word for word "
+        "(not an instruction about it)."
+    )
+    expected_structure: str = Field(
+        description="The English structure a good answer uses, e.g. 'My favourite ... is ...'."
+    )
+    model_answer: str | None = Field(
+        default=None, description="A short sample answer at the learner's level."
+    )
 
 
 class ReasonArgs(BaseModel):
@@ -35,9 +42,9 @@ class ShowBoardArgs(BaseModel):
 
 class RecordMistakeArgs(BaseModel):
     type: Literal["pronunciation", "grammar", "vocabulary", "spelling"]
-    original: str
-    corrected: str
-    explanation_vi: str
+    original: str = Field(description="Only the wrong words, as the learner wrote them.")
+    corrected: str = Field(description="The corrected words.")
+    explanation_vi: str = Field(description="One short sentence in Vietnamese: the rule.")
     subtype: str | None = None
 
 
