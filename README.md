@@ -43,9 +43,10 @@ The library never configures logging; a host application sets up its own handler
 `ea_llm` logger. Database settings do not belong here: the module reaches data only through the
 ports below, and the host application owns the connection.
 
-Run `uv run python scripts/check.py` after changes: it lints, runs the tests and then removes
-generated caches (`.pytest_cache`, `.hypothesis`, `__pycache__`, ...). Use
-`uv run python scripts/clean.py` to only clean.
+Run `scripts/check.sh` after changes: it lints, checks formatting, runs the tests (extra
+arguments go to pytest) and then removes generated caches (`.pytest_cache`, `.hypothesis`,
+`__pycache__`, ...), even when a check fails. `scripts/check.sh clean` only cleans (`--all` also
+removes `.venv`).
 
 ## How it is used
 
@@ -88,6 +89,30 @@ front-end developers: sessions, SSE turn streams, catalog and event schemas, wit
 `/docs`. It is a development tool. In production the Talkwise backend owns the public API,
 authentication and persistence.
 
+## Evals
+
+Evals send hand-written cases through the real teacher (`TeacherService` with the configured
+model on OpenRouter, no fallback) and grade the replies in two layers:
+
+1. **Rule checks** (free, deterministic): clean output, pronouns, the question the learner saw,
+   required corrections, no correction of correct sentences, Vietnamese share, length, forbidden
+   phrases. Defined per case in `src/ea_llm/evals/cases/teacher/*.yaml`.
+2. **LLM judge** (rubric 1-5): `run` writes `judge_prompt.md`, a self-contained file with fixed
+   instructions (`src/ea_llm/evals/judge_instructions.md`) and every case. Any capable model reads
+   it and writes `judge_scores.jsonl` next to it; `report` validates and merges the scores.
+
+```bash
+uv run python -m ea_llm.evals.run_eval run                       # ~40 cases, about $0.015
+uv run python -m ea_llm.evals.run_eval run --filter fc-          # a subset
+# let a judge write eval_runs/<run>/judge_scores.jsonl, then:
+uv run python -m ea_llm.evals.run_eval report eval_runs/<run> --baseline eval_runs/<older run>
+```
+
+Runs land in `eval_runs/` (gitignored). `report` re-applies the current rule checks, so an older
+baseline stays comparable; with `--baseline` it lists cases that newly fail or lost a judge point.
+Each case runs once, so a single run can move by a case or two from model randomness.
+The shipped cases are drafts (`reviewed_by: PLACEHOLDER`) until an English teacher reviews them.
+
 ## Layout
 
 ```
@@ -96,13 +121,14 @@ src/ea_llm/
   prompts/        versioned prompt templates, registry (prompt_version) and builder
   teacher/        parser, tools, guards, history, hedged streaming, runner, personas
   adapters/       in-memory port implementations
-  data/           seed teachers and scenarios (mirror the DB tables)
-  evals/          latency benchmark
+  data/           seed teachers and scenarios (mirror the DB tables), prices, blocked terms
+  pricing.py      price table and cost estimates for calls without a reported cost
+  evals/          eval cases, rule checks + judge handoff (run_eval), latency/cost benchmark
   cli.py          terminal chat and `serve`
   devserver.py    FastAPI dev server
   testing.py      FakeProvider for tests and offline mode
 tests/            unit and integration tests (no network)
-scripts/          clean.py, check.py
+scripts/          check.sh (lint, format, tests, clean)
 ```
 
 ## Design notes
@@ -114,5 +140,11 @@ scripts/          clean.py, check.py
   depends on where the stream was split.
 - **Latency:** if the primary has no token after 2.5 s (or fails), the fallback starts in
   parallel and the first provider with content wins; give up after 6 s.
-- **Guards:** blocking per-segment checks (markdown, emoji, spoken scores) and flag-only checks
-  after the turn (pronouns, number of corrections, Vietnamese ratio, CEFR overshoot, ...).
+- **Cost:** every LLM call is a usage row (`TurnRecord.usage`). OpenRouter's reported cost wins;
+  otherwise `data/pricing.yaml` prices it. A call cut off before its usage arrived (the losing
+  side of a hedge, or a turn the learner interrupted) gets an estimated row with `cancelled`.
+- **Guards:** blocking per-segment checks (blocked terms, markdown, emoji, spoken scores) and
+  flag-only checks after the turn (pronouns, number of corrections, Vietnamese ratio, CEFR
+  overshoot, numbers without a source, ...). A blocked term drops the rest of the turn and sends
+  a fixed "back to the lesson" line. The CEFR guard also uses a word list when
+  `data/cefr_wordlist.yaml` exists (format in `teacher/wordlist.py`; none is shipped yet).

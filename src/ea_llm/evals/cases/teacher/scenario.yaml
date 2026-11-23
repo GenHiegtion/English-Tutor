@@ -1,0 +1,228 @@
+# Scenario role-play cases (text channel).
+# TODO(human): drafted by the developers; an English teacher must review every `expect` block and
+# then set reviewed_by to their name.
+reviewed_by: PLACEHOLDER
+cases:
+  - id: sc-cafe-want-polite
+    mode: scenario
+    scenario: cafe-order
+    persona: minh
+    cefr: A2
+    learner: "I want a coffee"
+    expect:
+      must_correct: ["would like|I'd like"]
+      max_corrections: 1
+      ends_with_question: true
+    judge: [correction_quality, explanation_correct, conversation_flow]
+    tags: [mistake-mid-scenario, target-word]
+    notes: A polite-request correction, then the barista continues the order.
+
+  - id: sc-cafe-target-used-correctly
+    mode: scenario
+    scenario: cafe-order
+    persona: lan
+    cefr: A2
+    learner: "I would like a cup of tea, please."
+    expect:
+      no_correction: true
+      en_only: true
+      ends_with_question: true
+    judge: [conversation_flow, no_overcorrection]
+    tags: [target-word-used]
+    notes: A correct line with target words gets an in-role reply only, no grammar talk.
+
+  - id: sc-cafe-vi-question-word
+    mode: scenario
+    scenario: cafe-order
+    persona: lan
+    cefr: A2
+    learner: '"to go" nghĩa là gì vậy?'
+    expect:
+      require_vi: true
+      must_include_any: ["mang đi", "mang về"]
+      no_correction: true
+    judge: [explanation_correct, conversation_flow, natural_vietnamese]
+    tags: [vietnamese-question]
+    notes: Answer the word question in Vietnamese, then return to the role with one English line.
+
+  - id: sc-cafe-all-vietnamese
+    mode: scenario
+    scenario: cafe-order
+    persona: chi
+    cefr: A1
+    learner: "cho mình một ly cà phê sữa đá"
+    expect:
+      require_vi: true
+      must_include_any: ["iced coffee", "coffee with milk", "milk coffee", "iced milk coffee"]
+      max_sentences: 3
+    judge: [conversation_flow, level_appropriate, natural_vietnamese]
+    tags: [answers-in-vietnamese]
+    notes: The learner orders in Vietnamese; the teacher gives the English words and keeps going.
+
+  - id: sc-cafe-learner-redirects
+    mode: scenario
+    scenario: cafe-order
+    persona: minh
+    cefr: B1
+    learner: "Can I sit outside? It's really hot in here."
+    expect:
+      no_correction: true
+      en_only: true
+    judge: [conversation_flow, no_overcorrection]
+    tags: [learner-steers]
+    notes: The learner changes direction in English; the barista follows.
+
+  - id: sc-cafe-a1-one-word
+    mode: scenario
+    scenario: cafe-order
+    persona: lan
+    age_band: under_18
+    cefr: A1
+    learner: "coffee"
+    expect:
+      require_vi: true
+      max_sentences: 3
+      no_flags: [cefr_overshoot]
+    judge: [level_appropriate, conversation_flow, natural_vietnamese]
+    tags: [a1-one-word]
+    notes: An A1 learner answers with one word; the teacher models a short full sentence kindly.
+
+  - id: sc-cafe-c1-no-long-vietnamese
+    mode: scenario
+    scenario: cafe-order
+    persona: chi
+    cefr: C1
+    learner: "Could I get a flat white with oat milk? And do you happen to have anything gluten-free?"
+    expect:
+      no_correction: true
+      vi_ratio: [0.0, 0.15]
+    judge: [level_appropriate, conversation_flow]
+    tags: [c1-learner]
+    notes: A C1 learner needs no Vietnamese explanation; the reply stays in English.
+
+  - id: sc-cafe-how-much-word-order
+    mode: scenario
+    scenario: cafe-order
+    persona: minh
+    cefr: A2
+    history:
+      - learner: "I'd like a cup of tea, please"
+        teacher: "<en>Sure! Hot or iced?</en>"
+      - learner: "Hot, please"
+        teacher: "<en>One hot tea. Anything else?</en>"
+    learner: "No, thanks. How much it is?"
+    expect:
+      must_correct: ["how much is it"]
+      max_corrections: 1
+    judge: [correction_quality, explanation_correct, conversation_flow]
+    tags: [mistake-mid-scenario, target-word]
+    notes: Question word order; the explanation must be right (is goes before it).
+
+  - id: sc-cafe-typo-target-only
+    mode: scenario
+    scenario: cafe-order
+    persona: lan
+    cefr: A2
+    learner: "I wood like a cofee, please"
+    expect:
+      must_correct: ["would"]
+      must_not_correct: ["coffee", "cofee"]
+    judge: [correction_quality, no_overcorrection]
+    tags: [typo-target-word, typo-unimportant-word]
+    notes: Spelling of a target word is corrected; the typo in a non-target word is ignored.
+
+  - id: sc-cafe-personal-off-topic
+    mode: scenario
+    scenario: cafe-order
+    persona: minh
+    cefr: A2
+    learner: "Anh có người yêu chưa?"
+    expect:
+      require_vi: true
+      no_correction: true
+      max_sentences: 3
+    judge: [task_boundaries, conversation_flow, natural_vietnamese]
+    tags: [off-topic]
+    notes: A personal off-topic question gets one friendly sentence, then back to the cafe.
+
+  - id: sc-interview-present-perfect
+    mode: scenario
+    scenario: job-interview
+    persona: hung
+    age_band: senior
+    cefr: B1
+    learner: "Good morning. I am work as accountant for five years."
+    expect:
+      must_correct: ["have worked|have been working|I've worked|I've been working"]
+      max_corrections: 2
+    judge: [correction_quality, explanation_correct, natural_vietnamese]
+    tags: [mistake-mid-scenario, senior-address]
+    notes: "Several errors: am work, missing article, tense with for. Pronouns tôi/bác."
+
+  - id: sc-interview-have-got-variant
+    mode: scenario
+    scenario: job-interview
+    persona: hung
+    cefr: B1
+    learner: "I've got two years of experience in sales, and I'm looking for a new challenge."
+    expect:
+      no_correction: true
+    judge: [no_overcorrection, conversation_flow]
+    tags: [accepted-variant, target-word-used]
+    notes: "\"have got\" is an accepted variant and two target phrases are used correctly."
+
+  - id: sc-interview-vi-question-advice
+    mode: scenario
+    scenario: job-interview
+    persona: hung
+    age_band: senior
+    cefr: B1
+    learner: "Tôi nên trả lời câu hỏi về điểm yếu thế nào cho khéo?"
+    expect:
+      require_vi: true
+      no_correction: true
+    judge: [conversation_flow, natural_vietnamese, level_appropriate]
+    tags: [vietnamese-question]
+    notes: Short advice in Vietnamese, then the interviewer asks the question in English.
+
+  - id: sc-directions-kid-article
+    mode: scenario
+    scenario: lost-directions
+    persona: lan
+    age_band: under_18
+    cefr: A1
+    learner: "hello, where is bank?"
+    expect:
+      must_correct: ["the bank"]
+      max_sentences: 3
+      no_flags: [cefr_overshoot]
+    judge: [correction_quality, level_appropriate, natural_vietnamese]
+    tags: [mistake-mid-scenario, kid-address]
+    notes: Missing article for an A1 child; pronouns cô/em; English under 8 words per sentence.
+
+  - id: sc-directions-a1-hard-question
+    mode: scenario
+    scenario: lost-directions
+    persona: lan
+    age_band: under_18
+    cefr: A1
+    learner: "Cô ơi tại sao nói turn left mà không nói turn to left ạ?"
+    expect:
+      require_vi: true
+      no_flags: [cefr_overshoot]
+    judge: [explanation_correct, level_appropriate, natural_vietnamese]
+    tags: [a1-hard-question]
+    notes: A hard question from an A1 learner is explained in Vietnamese; English stays A1.
+
+  - id: sc-directions-targets-correct
+    mode: scenario
+    scenario: lost-directions
+    persona: chi
+    cefr: A1
+    learner: "Turn right and go straight?"
+    expect:
+      no_correction: true
+      no_flags: [cefr_overshoot]
+    judge: [conversation_flow, no_overcorrection, level_appropriate]
+    tags: [target-word-used]
+    notes: Correct use of target phrases at A1.

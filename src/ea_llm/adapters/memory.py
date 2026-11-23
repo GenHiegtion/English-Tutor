@@ -43,8 +43,7 @@ class MemoryPersonaStore:
 
     @classmethod
     def from_seed(cls) -> MemoryPersonaStore:
-        raw = yaml.safe_load((DATA_DIR / "personas.yaml").read_text(encoding="utf-8"))
-        return cls([Persona.model_validate(item) for item in raw])
+        return cls(load_seed_personas())
 
     async def list_personas(self) -> list[Persona]:
         return [p for p in self._by_id.values() if p.status == "published"]
@@ -62,6 +61,11 @@ class MemoryLearnerStore:
 
     def put(self, profile: LearnerProfile) -> None:
         self._by_id[profile.user_id] = profile
+
+
+def load_seed_personas() -> list[Persona]:
+    raw = yaml.safe_load((DATA_DIR / "personas.yaml").read_text(encoding="utf-8"))
+    return [Persona.model_validate(item) for item in raw]
 
 
 def load_seed_scenarios() -> list[ScenarioRef]:

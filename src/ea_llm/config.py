@@ -36,6 +36,8 @@ class ModelRoute(BaseModel):
 
 
 # Starting values; re-measure with ea_llm.evals.bench_latency.
+# Background roles default to Haiku to keep costs low; a stronger model (e.g. Sonnet) can be
+# set per role through the environment once the budget allows.
 DEFAULT_ROUTES: dict[str, ModelRoute] = {
     "teacher": ModelRoute(
         model="anthropic/claude-haiku-5.5",
@@ -44,13 +46,13 @@ DEFAULT_ROUTES: dict[str, ModelRoute] = {
         timeout_s=6.0,
     ),
     "examiner": ModelRoute(
-        model="anthropic/claude-sonnet-5.5", effort="medium", max_tokens=1500, timeout_s=30.0
+        model="anthropic/claude-haiku-5.5", effort="medium", max_tokens=1500, timeout_s=30.0
     ),
     "reporter": ModelRoute(
-        model="anthropic/claude-sonnet-5.5", effort="medium", max_tokens=2500, timeout_s=60.0
+        model="anthropic/claude-haiku-5.5", effort="medium", max_tokens=2500, timeout_s=60.0
     ),
     "writer": ModelRoute(
-        model="anthropic/claude-sonnet-5.5", effort="medium", max_tokens=4000, timeout_s=120.0
+        model="anthropic/claude-haiku-5.5", effort="medium", max_tokens=4000, timeout_s=120.0
     ),
 }
 

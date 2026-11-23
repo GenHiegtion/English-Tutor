@@ -86,7 +86,8 @@ async def test_normal_turn_streams_segments_tools_and_persists(stores, scenario)
         "ask_question",
     ]
     assert stored[-1].persona_id == "lan"
-    assert stores[0].turns["t1"].usage.cost_usd == 0.0001
+    [usage] = stores[0].turns["t1"].usage
+    assert usage.cost_usd == 0.0001 and not usage.cancelled
 
 
 async def test_next_turn_pairs_every_tool_use_with_a_tool_result(stores, scenario):
@@ -166,6 +167,33 @@ async def test_fallback_wins_when_primary_is_slow(stores, scenario):
     assert events[0].text == "Fast one." and events[-1].fallback_used
 
 
+async def test_cancelled_loser_gets_an_estimated_usage_row(stores, scenario):
+    haiku = "anthropic/claude-haiku-5.5"
+    primary = FakeProvider([reply("<en>Slow one.</en>")], first_token_delay=1.0, model=haiku)
+    fallback = FakeProvider([reply("<en>Fast one.</en>")])
+    service = make_service(stores, primary, fallback, hedge_after_s=0.05, give_up_after_s=0.5)
+    await open_session(service, scenario)
+    await collect(service, turn_ctx("t1", "hi", scenario=scenario))
+
+    answer, loser = stores[0].turns["t1"].usage
+    assert answer.fallback_used and not answer.cancelled and answer.cost_usd == 0.0001
+    assert loser.model == haiku and loser.cancelled and not loser.fallback_used
+    assert loser.input_tokens == 100 and loser.output_tokens == 0  # the winner's prompt size
+    assert loser.cost_usd == pytest.approx(100 * 0.10 / 1_000_000)
+
+
+async def test_missing_reported_cost_is_estimated_from_the_price_table(stores, scenario):
+    events = reply("<en>Hello there.</en>", cost=None)
+    for e in events:
+        if type(e).__name__ == "UsageReport":
+            e.model = "anthropic/claude-haiku-5.5"
+    service = make_service(stores, FakeProvider([events]))
+    await open_session(service, scenario)
+    await collect(service, turn_ctx("t1", "hi", scenario=scenario))
+    [usage] = stores[0].turns["t1"].usage
+    assert usage.cost_usd == pytest.approx((100 * 0.10 + 20 * 0.50) / 1_000_000)
+
+
 async def test_providers_down_saves_nothing(stores, scenario):
     service = make_service(stores, FakeProvider([failure()]), FakeProvider([failure()]))
     await open_session(service, scenario)
@@ -243,6 +271,9 @@ async def test_cancel_before_anything_delivered_drops_assistant_message(stores, 
     await stream.aclose()
     stored = await stores[0].load_messages("s1")
     assert [m.message.role for m in stored] == ["user"]
+    [usage] = stores[0].turns["t1"].usage  # cut off before the usage report: estimated
+    assert usage.cancelled and usage.model == "fake/model" and usage.input_tokens > 0
+    assert usage.cost_usd is None  # the fake model has no price
 
 
 @pytest.mark.parametrize(("mode", "ok"), [("free_chat", True), ("lesson", False)])
@@ -256,3 +287,43 @@ async def test_open_session_mode_rules(stores, scenario, mode, ok):
     else:
         with pytest.raises((ValueError, NotImplementedError)):
             await call
+
+
+async def test_blocked_term_drops_rest_of_turn_and_terminal(stores, scenario):
+    text = "<vi>Bạn nói tốt.</vi><en>That is shit.</en><en>Anything else?</en>"
+    provider = FakeProvider([reply(text, [MISTAKE, ASK])])
+    service = make_service(stores, provider)
+    await open_session(service, scenario)
+    events = await collect(service, turn_ctx("t1", "hi", scenario=scenario))
+
+    segs = [e for e in events if isinstance(e, OutputSegment)]
+    assert [s.text for s in segs] == ["Bạn nói tốt.", "Mình quay lại bài nhé."]
+    assert not any(isinstance(e, MistakeNoted) for e in events)
+    terminal = next(e for e in events if isinstance(e, TerminalAction))
+    assert terminal.tool == "open_turn"
+    assert "blocked_content" in events[-1].guard_flags
+
+    assistant = (await stores[0].load_messages("s1"))[-1]
+    assert "shit" not in assistant.message.content[0].text
+    assert set(s["status"] for s in assistant.tool_statuses.values()) == {"ignored"}
+
+
+async def test_numbers_are_grounded_in_free_chat_but_not_checked_in_scenario(stores, scenario):
+    provider = FakeProvider(
+        [
+            reply("<en>Five years is a long time. Messi scored 91 goals in 2012.</en>"),
+            reply("<en>That is three dollars.</en>"),
+        ]
+    )
+    service = make_service(stores, provider)
+    await service.open_session(
+        session_id="fc", user_id="u1", channel="text", mode="free_chat", persona_id="lan"
+    )
+    events = await collect(
+        service, turn_ctx("t1", "I work here for 5 years", session_id="fc", mode="free_chat")
+    )
+    assert "ungrounded_number" in events[-1].guard_flags
+
+    await open_session(service, scenario)
+    events = await collect(service, turn_ctx("t2", "how much?", scenario=scenario))
+    assert "ungrounded_number" not in events[-1].guard_flags

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -18,6 +19,7 @@ from ea_llm.models import (
     UsageRecord,
 )
 from ea_llm.ports import HistoryStore, LearnerStore, PersonaStore
+from ea_llm.pricing import estimate_cost
 from ea_llm.prompts.builder import build_system
 from ea_llm.prompts.registry import static_bundle
 from ea_llm.providers.base import (
@@ -30,6 +32,7 @@ from ea_llm.providers.base import (
     TextDelta,
     TextPart,
     ToolCall,
+    ToolResultPart,
     ToolUsePart,
     UsageReport,
 )
@@ -44,10 +47,11 @@ from ea_llm.teacher.events import (
     TurnEnd,
     TurnFailed,
 )
-from ea_llm.teacher.hedge import hedged_stream
+from ea_llm.teacher.hedge import LoserCancelled, Source, hedged_stream
 from ea_llm.teacher.history import (
     SESSION_START_NOTE,
     advance_window,
+    estimate_tokens,
     pending_tool_results,
     render_segments,
     to_messages,
@@ -63,6 +67,7 @@ from ea_llm.teacher.tools import (
     tools_for,
     validate_args,
 )
+from ea_llm.teacher.wordlist import CefrWordlist, load_wordlist
 
 logger = logging.getLogger(__name__)
 RECENT_RATIO_TURNS = 10
@@ -97,7 +102,11 @@ class _Turn:
     stop: str | None = None
     ttft_ms: int | None = None
     fallback_used: bool = False
+    source: Source = "primary"  # provider whose answer the learner gets
+    cancelled_losers: list[Source] = field(default_factory=list)
+    prompt_tokens: int = 0  # rough estimate, to price calls cancelled before their usage
     completed: bool = False
+    blocked: bool = False  # a blocked term was found: the rest of the turn is dropped
 
 
 class TeacherService:
@@ -110,6 +119,7 @@ class TeacherService:
         learners: LearnerStore,
         fallback: LLMProvider | None = None,
         config: TeacherConfig | None = None,
+        wordlist: CefrWordlist | None = None,
     ) -> None:
         self.primary = primary
         self.fallback = fallback
@@ -117,6 +127,7 @@ class TeacherService:
         self.personas = personas
         self.learners = learners
         self.config = config or TeacherConfig()
+        self.wordlist = wordlist if wordlist is not None else load_wordlist()
         self._delivered: dict[str, int] = {}  # turn_id -> last seq the learner received
 
     # ------------------------------------------------------------------ sessions
@@ -228,7 +239,7 @@ class TeacherService:
             turn_id=turn.ctx.turn_id,
             message=Message(role="user", content=[TextPart(text=SESSION_START_NOTE)]),
         )
-        await self._save(turn, [start, self._assistant_stored(turn)], usage=None)
+        await self._save(turn, [start, self._assistant_stored(turn)], usage=[])
         turn.completed = True
         yield TerminalAction(turn_id=turn.ctx.turn_id, tool="open_turn")
         yield self._turn_end(turn, provider="none")
@@ -266,6 +277,7 @@ class TeacherService:
             ),
         )
 
+        turn.prompt_tokens = _estimate_prompt_tokens(request)
         started = time.monotonic()
         error: ProviderError | None = None
         stream = hedged_stream(
@@ -277,9 +289,13 @@ class TeacherService:
         )
         try:
             async for event, source in stream:
+                if isinstance(event, LoserCancelled):
+                    turn.cancelled_losers.append(event.source)
+                    continue
                 if isinstance(event, ProviderError):
                     error = event
                     break
+                turn.source = source
                 turn.fallback_used = source == "fallback"
                 if isinstance(event, TextDelta):
                     if turn.ttft_ms is None:
@@ -319,11 +335,14 @@ class TeacherService:
             for seg in turn.parser.finish():
                 for out in self._emit_segment(turn, seg):
                     yield out
-            self._finalize_flags(turn, stored)
+            if turn.blocked and turn.terminal is not None:
+                turn.tool_statuses[turn.terminal.id] = {"status": "ignored"}
+                turn.terminal = None
+            self._finalize_flags(turn, stored, user_msg)
             for out in self._fallback_phrases(turn):
                 yield out
 
-            usage = self._usage_record(turn)
+            usage = self._usage_records(turn)
             await self._save(turn, [user_msg, self._assistant_stored(turn)], usage)
             turn.completed = True
             terminal = turn.terminal
@@ -372,8 +391,19 @@ class TeacherService:
         )
 
     def _emit_segment(self, turn: _Turn, seg: Segment) -> list[TeacherEvent]:
+        if turn.blocked:
+            return []
         result = guards.check_segment(seg)
         turn.flags += result.flags
+        if "blocked_content" in result.flags:
+            turn.blocked = True
+            logger.warning(
+                "blocked term in teacher output: session=%s turn=%s",
+                turn.ctx.session_id,
+                turn.ctx.turn_id,
+            )
+            line = phrases.back_to_lesson(turn.snapshot.address)
+            return [self._segment_event(turn, "vi", line)]
         if result.segment is None:
             return []
         kept = result.segment
@@ -396,6 +426,9 @@ class TeacherService:
     def _handle_tool(self, turn: _Turn, call: ToolCall) -> list[TeacherEvent]:
         ctx = turn.ctx
         turn.tool_parts.append(ToolUsePart(id=call.id, name=call.name, args=call.args))
+        if turn.blocked:
+            turn.tool_statuses[call.id] = {"status": "ignored"}
+            return []
         if call.name not in allowed_tool_names(ctx.channel, ctx.mode):
             turn.flags.append("tool_not_allowed")
             turn.tool_statuses[call.id] = {"status": "invalid", "error": "tool"}
@@ -420,14 +453,21 @@ class TeacherService:
         turn.mistakes += 1
         return [MistakeNoted(turn_id=ctx.turn_id, **parsed.model_dump())]
 
-    def _finalize_flags(self, turn: _Turn, stored: list[StoredMessage]) -> None:
+    def _finalize_flags(
+        self, turn: _Turn, stored: list[StoredMessage], user_msg: StoredMessage
+    ) -> None:
         recent = _recent_segments(stored, turn.segments)
+        scenario = turn.ctx.scenario
         turn.flags += guards.check_turn(
             turn.segments,
             address=turn.snapshot.address,
             cefr=turn.snapshot.learner.cefr,
             mistakes_recorded=turn.mistakes,
             recent_vi_ratio=guards.vi_ratio(recent),
+            grounding=_grounding_texts(stored, user_msg, scenario),
+            check_numbers=turn.ctx.mode != "scenario",  # role-play invents prices and times
+            wordlist=self.wordlist,
+            exempt_words=scenario.targets if scenario else (),
         )
         if turn.parser.dropped_chars:
             turn.flags.append("dropped_chars")
@@ -439,6 +479,8 @@ class TeacherService:
     def _fallback_phrases(self, turn: _Turn) -> list[TeacherEvent]:
         """Fixed lines for a refused or empty turn; they are stored in the history too."""
         address = turn.snapshot.address
+        if turn.blocked:  # the back-to-lesson line was already sent
+            return []
         if turn.stop == "refusal":
             turn.flags.append("refusal")
             return [self._segment_event(turn, "vi", phrases.back_to_lesson(address))]
@@ -470,24 +512,102 @@ class TeacherService:
             tool_statuses=turn.tool_statuses,
         )
 
-    def _usage_record(self, turn: _Turn, *, cancelled: bool = False) -> UsageRecord | None:
+    def _usage_records(self, turn: _Turn, *, cancelled: bool = False) -> list[UsageRecord]:
+        """One row per billed call: the answer (reported or estimated) and any cancelled loser.
+
+        OpenRouter's reported cost wins; otherwise the cost comes from the price table. A call
+        cut off before its usage arrived is estimated from the prompt and the text received.
+        """
+        records: list[UsageRecord] = []
         usage = turn.usage
-        if usage is None:
-            return None
+        if usage is not None:
+            cost = usage.cost_usd
+            if cost is None:
+                cost = estimate_cost(
+                    usage.model,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    cache_read_tokens=usage.cache_read_tokens,
+                    cache_write_tokens=usage.cache_write_tokens,
+                )
+            records.append(
+                self._usage_row(
+                    turn,
+                    model=usage.model,
+                    provider=usage.provider,
+                    tokens=(
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        usage.cache_read_tokens,
+                        usage.cache_write_tokens,
+                    ),
+                    cost=cost,
+                    fallback=turn.fallback_used,
+                    cancelled=cancelled,
+                )
+            )
+        elif cancelled:
+            answer = Message(
+                role="assistant",
+                content=[TextPart(text=render_segments(turn.segments)), *turn.tool_parts],
+            )
+            records.append(
+                self._estimated_row(
+                    turn, turn.source, turn.prompt_tokens, estimate_tokens(answer), ttft=True
+                )
+            )
+        prompt = turn.prompt_tokens
+        if usage is not None:  # the loser got the same prompt the winner reported
+            prompt = usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
+        for loser in turn.cancelled_losers:
+            records.append(self._estimated_row(turn, loser, prompt, 0, ttft=False))
+        return records
+
+    def _estimated_row(
+        self, turn: _Turn, source: Source, prompt_tokens: int, output_tokens: int, *, ttft: bool
+    ) -> UsageRecord:
+        """A cancelled call priced as if no prompt token was cached (an upper bound)."""
+        provider = self.primary if source == "primary" else self.fallback
+        model = provider.model_for("teacher") if provider is not None else "unknown"
+        cost = estimate_cost(model, input_tokens=prompt_tokens, output_tokens=output_tokens)
+        return self._usage_row(
+            turn,
+            model=model,
+            provider="unknown",
+            tokens=(prompt_tokens, output_tokens, 0, 0),
+            cost=cost,
+            fallback=source == "fallback",
+            cancelled=True,
+            with_ttft=ttft,
+        )
+
+    @staticmethod
+    def _usage_row(
+        turn: _Turn,
+        *,
+        model: str,
+        provider: str,
+        tokens: tuple[int, int, int, int],
+        cost: float | None,
+        fallback: bool,
+        cancelled: bool,
+        with_ttft: bool = True,
+    ) -> UsageRecord:
+        input_tokens, output_tokens, cache_read, cache_write = tokens
         return UsageRecord(
             turn_id=turn.ctx.turn_id,
             session_id=turn.ctx.session_id,
             user_id=turn.ctx.user_id,
             role="teacher",
-            model=usage.model,
-            provider=usage.provider,
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            cache_read_tokens=usage.cache_read_tokens,
-            cache_write_tokens=usage.cache_write_tokens,
-            cost_usd=usage.cost_usd,
-            ttft_ms=turn.ttft_ms,
-            fallback_used=turn.fallback_used,
+            model=model,
+            provider=provider,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+            cost_usd=cost,
+            ttft_ms=turn.ttft_ms if with_ttft else None,
+            fallback_used=fallback,
             cancelled=cancelled,
         )
 
@@ -507,7 +627,7 @@ class TeacherService:
         )
 
     async def _save(
-        self, turn: _Turn, messages: list[StoredMessage], usage: UsageRecord | None
+        self, turn: _Turn, messages: list[StoredMessage], usage: list[UsageRecord]
     ) -> None:
         await self.history.append_turn(
             turn.ctx.session_id,
@@ -524,7 +644,7 @@ class TeacherService:
         messages = [user_msg]
         if assistant.message.content:  # an empty assistant message is dropped entirely
             messages.append(assistant)
-        await self._save(turn, messages, self._usage_record(turn, cancelled=True))
+        await self._save(turn, messages, self._usage_records(turn, cancelled=True))
 
 
 def _recent_segments(stored: list[StoredMessage], current: list[Segment]) -> list[Segment]:
@@ -538,3 +658,31 @@ def _recent_segments(stored: list[StoredMessage], current: list[Segment]) -> lis
                 segments += parser.feed(part.text)
         segments += parser.finish()
     return [*segments, *current]
+
+
+def _grounding_texts(
+    stored: list[StoredMessage], user_msg: StoredMessage, scenario: ScenarioRef | None
+) -> list[str]:
+    """Texts a number in the teacher's reply may legitimately come from.
+
+    The current and previous user messages (learner text, tool results, system notes) and the
+    scenario data.
+    """
+    previous = [m for m in stored if m.message.role == "user"][-1:]
+    texts: list[str] = []
+    for item in [*previous, user_msg]:
+        for part in item.message.content:
+            if isinstance(part, TextPart):
+                texts.append(part.text)
+            elif isinstance(part, ToolResultPart):
+                texts.append(part.content)
+    if scenario is not None:
+        texts += [scenario.title, scenario.goal, scenario.opener, *scenario.targets]
+    return texts
+
+
+def _estimate_prompt_tokens(request: LLMRequest) -> int:
+    """Rough size of a request, using the same estimate as history trimming."""
+    chars = sum(len(block.text) for block in request.system)
+    chars += sum(len(json.dumps(t.input_schema)) + len(t.description) for t in request.tools)
+    return chars // 3 + sum(estimate_tokens(m) for m in request.messages)

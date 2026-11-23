@@ -10,7 +10,6 @@ from importlib import resources
 from ea_llm.teacher.context import Channel, Mode
 
 TEMPLATE_PACKAGE = "ea_llm.prompts.templates"
-STATIC_RULES = "static_rules.v1"
 
 
 @dataclass(frozen=True)
@@ -18,7 +17,7 @@ class PromptBundle:
     """The static text of prompt layer 2 for one channel/mode combination."""
 
     text: str
-    version: str  # e.g. "teacher.text.scenario@v1#a1b2c3"
+    version: str  # e.g. "teacher.text.scenario#a1b2c3"; the hash changes with any template edit
 
 
 @cache
@@ -29,7 +28,7 @@ def _read(name: str) -> str:
 
 @cache
 def static_bundle(channel: Channel, mode: Mode) -> PromptBundle:
-    names = (STATIC_RULES, f"channel_{channel}.v1", f"mode_{mode}.v1")
+    names = ("static_rules", f"channel_{channel}", f"mode_{mode}")
     text = "\n\n".join(_read(n) for n in names)
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
-    return PromptBundle(text=text, version=f"teacher.{channel}.{mode}@v1#{digest}")
+    return PromptBundle(text=text, version=f"teacher.{channel}.{mode}#{digest}")

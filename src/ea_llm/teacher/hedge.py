@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Literal
 
 from ea_llm.providers.base import (
@@ -18,6 +19,16 @@ from ea_llm.providers.base import (
 logger = logging.getLogger(__name__)
 Source = Literal["primary", "fallback"]
 _DONE = object()
+
+
+@dataclass(frozen=True)
+class LoserCancelled:
+    """Marker yielded once per provider that was still running when the other one won.
+
+    Its request may still be billed, so the caller records an estimated cost for it.
+    """
+
+    source: Source
 
 
 async def _pump(name: Source, provider: LLMProvider, req: LLMRequest, queue: asyncio.Queue) -> None:
@@ -38,11 +49,12 @@ async def hedged_stream(
     *,
     hedge_after_s: float,
     give_up_after_s: float,
-) -> AsyncIterator[tuple[LLMEvent, Source]]:
+) -> AsyncIterator[tuple[LLMEvent | LoserCancelled, Source]]:
     """Yield ``(event, source)`` from whichever provider produces content first.
 
     - The fallback starts when the primary has no token after ``hedge_after_s`` or fails first.
-    - The loser is cancelled as soon as the winner emits its first non-error event.
+    - The loser is cancelled as soon as the winner emits its first non-error event, and a
+      ``LoserCancelled`` marker is yielded for it (only if it had not already ended).
     - If nobody produces content within ``give_up_after_s``, a timeout ``ProviderError`` is
       yielded. Each turn starts the fallback at most once.
     """
@@ -53,6 +65,7 @@ async def hedged_stream(
         "primary": asyncio.create_task(_pump("primary", primary, req, queue))
     }
     finished: set[Source] = set()
+    failed: set[Source] = set()  # yielded an error: nothing left to bill or cancel
     last_error: ProviderError | None = None
     winner: Source | None = None
 
@@ -105,13 +118,15 @@ async def hedged_stream(
             if winner is None:
                 if isinstance(event, ProviderError):
                     last_error = event
+                    failed.add(name)
                     if name == "primary":
                         start_fallback()
                     continue
                 winner = name  # first non-error event: content, usage or stop
                 for other, task in tasks.items():
-                    if other != name:
+                    if other != name and other not in finished | failed:
                         task.cancel()
+                        yield LoserCancelled(source=other), other
             yield event, name
     finally:
         for task in tasks.values():

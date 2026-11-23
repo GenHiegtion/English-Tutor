@@ -6,6 +6,7 @@ from ea_llm.teacher.context import LearnerInput
 from ea_llm.teacher.input_checks import check_input
 from ea_llm.teacher.parser import Segment
 from ea_llm.teacher.tools import validate_args
+from ea_llm.teacher.wordlist import load_wordlist
 
 
 def seg(text, lang="vi", **kw):
@@ -54,6 +55,24 @@ def test_spoken_scores_are_blocked(text):
 
 def test_ordinary_numbers_pass():
     assert guards.check_segment(seg("Hãy nói 3 câu nhé")).segment is not None
+    assert guards.check_segment(seg("Messi scored 91 goals", "en")).segment is not None
+
+
+@pytest.mark.parametrize("text", ["That is shit", "Đéo biết", "Nói Mẹ kiếp là sai", "porn"])
+def test_blocked_terms_drop_the_segment(text):
+    result = guards.check_segment(seg(text))
+    assert result.segment is None and result.flags == ["blocked_content"]
+
+
+@pytest.mark.parametrize("text", ["Cái đĩa này đẹp", "Good skills", "Dickens wrote books"])
+def test_blocked_terms_match_whole_words_only(text):
+    assert guards.check_segment(seg(text)).segment is not None
+
+
+def test_blocked_terms_match_decomposed_unicode():
+    import unicodedata
+
+    assert guards.contains_blocked_term(unicodedata.normalize("NFD", "đéo"))
 
 
 # ---- flag-only guards -----------------------------------------------------------------
@@ -91,6 +110,63 @@ def test_cefr_overshoot_limits_english_sentence_length():
     assert "cefr_overshoot" not in turn_flags([long_en], cefr="C1")
     protected = seg(long_en.text, "en", protected=True)
     assert "cefr_overshoot" not in turn_flags([protected])
+
+
+def test_ungrounded_numbers_need_a_source():
+    said = [seg("Messi scored 91 goals and won eight titles.", "en")]
+    assert "ungrounded_number" in turn_flags(said)
+    assert "ungrounded_number" not in turn_flags(said, grounding=["he scored 91, he has 8"])
+    assert "ungrounded_number" not in turn_flags(said, check_numbers=False)
+    five = [seg("Five years is a long time. Which one do you like?", "en")]
+    assert "ungrounded_number" not in turn_flags(five, grounding=["I work here for 5 years"])
+    assert guards.ungrounded_numbers([seg("It costs 1,000 dollars", "en")], ["1000"]) == set()
+
+
+WORDLIST_YAML = """
+source: test fixture
+reviewed_by: tester
+levels:
+  A1: [i, you, a, the, like, coffee, want, to, go, is, it, stop, city]
+  A2: [would, cup, of, please]
+  B1: [delicious]
+"""
+
+
+@pytest.fixture
+def wordlist(tmp_path):
+    path = tmp_path / "cefr.yaml"
+    path.write_text(WORDLIST_YAML, encoding="utf-8")
+    return load_wordlist(path)
+
+
+def test_wordlist_is_cumulative_and_handles_simple_inflections(wordlist):
+    assert wordlist.knows("coffee", "B1") and not wordlist.knows("would", "A1")
+    assert wordlist.knows("likes", "A1") and wordlist.knows("liked", "A1")
+    assert wordlist.knows("stopped", "A1") and wordlist.knows("cities", "A1")
+    assert wordlist.reviewed_by == "tester"
+
+
+def test_wordlist_unknown_share_skips_proper_nouns_and_exempt_words(wordlist):
+    assert wordlist.unknown_share("I like coffee in Hanoi", "A1") == pytest.approx(0.25)
+    assert wordlist.unknown_share("I like coffee in Hanoi", "A1", frozenset({"in"})) == 0.0
+    # A1 learners are checked against A2 words (level + 1)
+    assert wordlist.unknown_share("I would like a cup of coffee", "A1") == 0.0
+
+
+def test_cefr_overshoot_uses_the_wordlist(wordlist):
+    rare = [seg("I want a delicious coffee", "en")]
+    assert "cefr_overshoot" in turn_flags(rare, cefr="A1", wordlist=wordlist)
+    assert "cefr_overshoot" not in turn_flags(rare, cefr="A2", wordlist=wordlist)
+    exempt = turn_flags(rare, cefr="A1", wordlist=wordlist, exempt_words=["delicious food"])
+    assert "cefr_overshoot" not in exempt
+
+
+def test_wordlist_file_errors(tmp_path):
+    assert load_wordlist(tmp_path / "missing.yaml") is None
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("levels: {Z9: [x]}", encoding="utf-8")
+    with pytest.raises(ValueError, match="Z9"):
+        load_wordlist(bad)
 
 
 def test_vi_ratio_counts_words():

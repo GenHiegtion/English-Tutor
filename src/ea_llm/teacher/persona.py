@@ -8,6 +8,11 @@ from ea_llm.teacher.context import ScenarioRef
 DEFAULT_ADDRESS = Address(teacher="mình", learner="bạn")
 
 # Target share of Vietnamese words by learner level.
+AGE_LABELS: dict[str, str] = {
+    "under_18": "under 18 (a child or teenager)",
+    "adult": "adult",
+    "senior": "older adult",
+}
 VI_TARGET_PCT: dict[CefrLevel, int] = {"A1": 70, "A2": 50, "B1": 35, "B2": 20, "C1": 10, "C2": 10}
 MAX_WORDS_PER_SENTENCE: dict[CefrLevel, int | None] = {
     "A1": 8,
@@ -47,6 +52,8 @@ def render_session_block(
         f"CEFR level: {learner.cefr}.",
         f"Target share of Vietnamese words: about {VI_TARGET_PCT[learner.cefr]}%.",
     ]
+    if learner.age_band in AGE_LABELS:
+        lines.append(f"Age group: {AGE_LABELS[learner.age_band]}.")
     if learner.display_name:
         lines.append(f"Name: {learner.display_name}.")
     if learner.interests:

@@ -1,0 +1,20 @@
+# OpenRouter prices in USD per 1 million tokens, from https://openrouter.ai/api/v1/models
+# (checked 2026-11-23). Used only when OpenRouter does not report a cost itself, and to estimate
+# calls that were cancelled before their usage arrived. The cost OpenRouter reports always wins.
+# `input` is uncached input; cache reads and writes are priced separately. Prompts stay far below
+# any long-context price tier (history is trimmed to a few thousand tokens), so tiers are omitted.
+anthropic/claude-haiku-5.5:
+  input: 0.10
+  output: 0.50
+  cache_read: 0.01
+  cache_write: 0.125
+openai/gpt-6-luna:
+  input: 0.10
+  output: 0.50
+  cache_read: 0.01
+  cache_write: 0.125
+anthropic/claude-sonnet-5.5:
+  input: 2.00
+  output: 10.00
+  cache_read: 0.10
+  cache_write: 2.50
