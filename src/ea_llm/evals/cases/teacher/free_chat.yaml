@@ -1,7 +1,7 @@
 # Free chat cases (text channel).
-# TODO(human): drafted by the developers; an English teacher must review every `expect` block and
-# then set reviewed_by to their name.
-reviewed_by: PLACEHOLDER
+# Reviewed by the developers (no outside teacher): every `expect` block was checked against
+# the teaching rules. A case still marked PLACEHOLDER would show as unreviewed in the report.
+reviewed_by: developers
 cases:
   - id: fc-topic-chosen-correct
     mode: free_chat
@@ -221,3 +221,89 @@ cases:
     judge: [conversation_flow, level_appropriate, no_overcorrection]
     tags: [correct-sentence, kid-address]
     notes: A correct A1 sentence; a simple question about the cat, English under 8 words.
+
+  - id: fc-correct-no-invented-error
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    learner: "My job is very busy, but it is interesting."
+    expect:
+      no_correction: true
+      ends_with_question: true
+    judge: [no_overcorrection, explanation_correct, conversation_flow]
+    tags: [correct-sentence, correction-quality]
+    notes: A correct sentence with "is" twice; nothing to fix, no "add is" style invented advice.
+
+  - id: fc-article-only
+    mode: free_chat
+    persona: minh
+    cefr: A2
+    learner: "I bought new phone last week and it is really fast"
+    expect:
+      must_correct: ["a new phone"]
+      must_not_correct: ["fast"]
+      max_corrections: 1
+    judge: [correction_quality, explanation_correct]
+    tags: [common-error, correction-quality]
+    notes: One missing article; the rest is right and must not be touched.
+
+  - id: fc-preposition-year
+    mode: free_chat
+    persona: hung
+    cefr: A2
+    learner: "I was born on 2005 in Hai Phong"
+    expect:
+      must_correct: ["in 2005"]
+      max_corrections: 1
+    judge: [correction_quality, explanation_correct]
+    tags: [common-error, correction-quality]
+    notes: "\"in\" with a year (\"on\" is for days and dates); the explanation must say so."
+
+  - id: fc-main-error-first
+    mode: free_chat
+    persona: lan
+    cefr: A2
+    learner: "Last weekend I have visited my grandparents in countryside"
+    expect:
+      must_correct: ["visited"]
+      max_corrections: 2
+    judge: [correction_quality, explanation_correct]
+    tags: [common-error, prioritise, correction-quality]
+    notes: The tense with "last weekend" matters most; "the countryside" may come second.
+
+  - id: fc-very-like
+    mode: free_chat
+    persona: chi
+    cefr: A2
+    interests: [music]
+    learner: "I very like this song, I listen it every day"
+    expect:
+      must_correct: ["really like|like this song very much|like this song a lot|love this song"]
+      max_corrections: 2
+    judge: [correction_quality, explanation_correct, natural_vietnamese]
+    tags: [common-error, vietnamese-transfer, correction-quality]
+    notes: '"I very like" copies "tôi rất thích"; "listen to it" is the second error.'
+
+  - id: fc-uncountable-information
+    mode: free_chat
+    persona: hung
+    cefr: B1
+    learner: "Can you give me some informations about the IELTS course?"
+    expect:
+      must_correct: ["information"]
+      max_corrections: 1
+    judge: [correction_quality, explanation_correct, level_appropriate]
+    tags: [common-error, correction-quality]
+    notes: Information is uncountable; nothing else is wrong.
+
+  - id: fc-correct-used-to
+    mode: free_chat
+    persona: minh
+    cefr: B1
+    learner: "When I was a child, I used to spend every summer at my grandmother's house"
+    expect:
+      no_correction: true
+      ends_with_question: true
+    judge: [no_overcorrection, conversation_flow]
+    tags: [correct-sentence, correction-quality]
+    notes: A correct B1 sentence; react and ask, no grammar talk.

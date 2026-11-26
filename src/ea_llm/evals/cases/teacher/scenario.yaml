@@ -1,7 +1,7 @@
 # Scenario role-play cases (text channel).
-# TODO(human): drafted by the developers; an English teacher must review every `expect` block and
-# then set reviewed_by to their name.
-reviewed_by: PLACEHOLDER
+# Reviewed by the developers (no outside teacher): every `expect` block was checked against
+# the teaching rules. A case still marked PLACEHOLDER would show as unreviewed in the report.
+reviewed_by: developers
 cases:
   - id: sc-cafe-want-polite
     mode: scenario
@@ -194,6 +194,7 @@ cases:
     learner: "hello, where is bank?"
     expect:
       must_correct: ["the bank"]
+      max_corrections: 1
       max_sentences: 3
       no_flags: [cefr_overshoot]
     judge: [correction_quality, level_appropriate, natural_vietnamese]

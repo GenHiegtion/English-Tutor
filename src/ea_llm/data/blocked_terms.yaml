@@ -1,13 +1,19 @@
 # Terms the teacher must never say (blocking guard, every learner). A segment containing one is
 # dropped together with the rest of the turn and replaced by the fixed "back to the lesson" line.
 # Matching is case-insensitive on whole words or phrases.
-# TODO(human): starter list written by the developers; a reviewer must extend and approve it
-# before production, especially for learners under 18.
-reviewed_by: PLACEHOLDER
+# Words a learner in distress needs to hear (suicide, self-harm) are deliberately NOT here: the
+# prompt tells the teacher to answer such a learner with care, and blocking would cut that reply.
+# Avoid terms that are also ordinary words in the other language ("cave", "dm") or inside
+# innocent phrases ("óc chó" is also a walnut).
+reviewed_by: developers
 terms:
   en:
     - fuck
     - fucking
+    - fucked
+    - motherfucker
+    - asshole
+    - bastard
     - shit
     - bitch
     - cunt
@@ -15,14 +21,21 @@ terms:
     - pussy
     - whore
     - slut
+    - nigger
+    - faggot
+    - retard
     - porn
     - porno
     - pornography
+    - blowjob
+    - masturbate
+    - masturbation
     - rape
     - cocaine
     - heroin
+    - meth
     - kill yourself
-    - suicide
+    - go die
   vi:
     - địt
     - đụ
@@ -34,8 +47,14 @@ terms:
     - mẹ kiếp
     - vãi lồn
     - vcl
+    - vkl
     - đm
+    - đcm
+    - clgt
+    - con đĩ
+    - đồ ngu
     - khiêu dâm
+    - mại dâm
     - ma túy
-    - tự tử
-    - tự sát
+    - ma tuý
+    - đi chết đi

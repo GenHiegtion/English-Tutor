@@ -152,7 +152,7 @@ async def test_refusal_and_empty_turn_use_fixed_phrases(stores, scenario):
     service = make_service(stores, provider)
     await open_session(service, scenario)
     first = await collect(service, turn_ctx("t1", "hi", scenario=scenario))
-    assert first[0].text == "Mình quay lại bài nhé." and "refusal" in first[-1].guard_flags
+    assert first[0].text == "Chúng ta quay lại bài học nhé." and "refusal" in first[-1].guard_flags
     second = await collect(service, turn_ctx("t2", "hello", scenario=scenario))
     assert second[0].text == "Bạn thử viết lại câu vừa rồi nhé."
     assert "empty_turn" in second[-1].guard_flags
@@ -297,7 +297,7 @@ async def test_blocked_term_drops_rest_of_turn_and_terminal(stores, scenario):
     events = await collect(service, turn_ctx("t1", "hi", scenario=scenario))
 
     segs = [e for e in events if isinstance(e, OutputSegment)]
-    assert [s.text for s in segs] == ["Bạn nói tốt.", "Mình quay lại bài nhé."]
+    assert [s.text for s in segs] == ["Bạn nói tốt.", "Chúng ta quay lại bài học nhé."]
     assert not any(isinstance(e, MistakeNoted) for e in events)
     terminal = next(e for e in events if isinstance(e, TerminalAction))
     assert terminal.tool == "open_turn"

@@ -41,6 +41,6 @@ if [[ "${1:-}" == "clean" ]]; then
 fi
 
 trap clean EXIT
-run uv run ruff check src tests
-run uv run ruff format --check src tests
+run uv run ruff check src tests scripts
+run uv run ruff format --check src tests scripts
 run uv run pytest -q "$@"

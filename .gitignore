@@ -30,5 +30,9 @@ htmlcov/
 # Documents
 docs/
 
-# Eval run outputs (results, judge files, reports)
+# Eval run outputs (results, judge files, reports) and exports of real sessions
 eval_runs/
+exports/
+
+# Structure rules
+.claude/
