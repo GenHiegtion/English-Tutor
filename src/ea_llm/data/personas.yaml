@@ -1,5 +1,6 @@
-# Seed teachers for development. Real teachers live in the `teacher_personas` table;
-# this file mirrors that shape so the same rows can be inserted at merge time.
+# Seed teachers. Real teachers live in the `teacher_personas` table; this file mirrors that shape
+# so the same rows can be inserted at merge time. switch_greeting is a template: {teacher} and
+# {learner} ({Teacher}/{Learner} capitalised) become the pronouns for the learner's age band.
 - id: lan
   name: Cô Lan
   gender: female
@@ -12,7 +13,7 @@
     adult: {teacher: mình, learner: bạn}
     senior: {teacher: cháu, learner: bác}
     unknown: {teacher: mình, learner: bạn}
-  switch_greeting: "Chào bạn, mình là cô Lan. Mình sẽ tiếp tục bài học từ chỗ mình đang dừng nhé."
+  switch_greeting: "Chào {learner}, {teacher} là Lan đây. {Teacher} và {learner} học tiếp từ chỗ vừa dừng nhé."
 
 - id: minh
   name: Anh Minh
@@ -26,7 +27,7 @@
     adult: {teacher: mình, learner: bạn}
     senior: {teacher: cháu, learner: bác}
     unknown: {teacher: mình, learner: bạn}
-  switch_greeting: "Chào bạn, mình là Minh đây. Mình tiếp tục từ chỗ vừa rồi nhé!"
+  switch_greeting: "Chào {learner}, {teacher} là Minh đây! {Teacher} và {learner} học tiếp luôn nhé."
 
 - id: hung
   name: Thầy Hùng
@@ -40,7 +41,7 @@
     adult: {teacher: tôi, learner: bạn}
     senior: {teacher: tôi, learner: bác}
     unknown: {teacher: tôi, learner: bạn}
-  switch_greeting: "Chào bạn, tôi là thầy Hùng. Chúng ta tiếp tục từ chỗ đang học nhé."
+  switch_greeting: "Chào {learner}, {teacher} là thầy Hùng. Chúng ta tiếp tục từ chỗ đang học nhé."
 
 - id: chi
   name: Chị Chi
@@ -54,4 +55,4 @@
     adult: {teacher: mình, learner: bạn}
     senior: {teacher: cháu, learner: bác}
     unknown: {teacher: mình, learner: bạn}
-  switch_greeting: "Hi bạn! Mình là Chi. Mình học tiếp từ chỗ vừa rồi nha."
+  switch_greeting: "Chào {learner}, {teacher} là Chi nè! {Teacher} với {learner} học tiếp nha."

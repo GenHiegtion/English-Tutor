@@ -34,6 +34,25 @@ def test_seed_personas_are_valid_and_complete():
 @pytest.mark.parametrize(
     ("persona", "age", "expected"),
     [
+        ("lan", "under_18", "Chào em, cô là Lan đây. Cô và em học tiếp từ chỗ vừa dừng nhé."),
+        ("lan", "adult", "Chào bạn, mình là Lan đây. Mình và bạn học tiếp từ chỗ vừa dừng nhé."),
+        ("minh", "senior", "Chào bác, cháu là Minh đây! Cháu và bác học tiếp luôn nhé."),
+    ],
+)
+def test_switch_greeting_follows_the_learner_age_band(persona, age, expected):
+    p = PERSONAS[persona]
+    assert compute_address(p, age).fill(p.switch_greeting) == expected
+
+
+def test_switch_greeting_rejects_unknown_placeholders():
+    data = PERSONAS["lan"].model_dump() | {"switch_greeting": "Chào {name}"}
+    with pytest.raises(ValueError, match="name"):
+        Persona.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("persona", "age", "expected"),
+    [
         ("lan", "adult", ("mình", "bạn")),
         ("lan", "under_18", ("cô", "em")),
         ("minh", "under_18", ("anh", "em")),

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from string import Formatter
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ea_llm.providers.base import Message
 from ea_llm.teacher.context import Channel, Mode, ScenarioRef
@@ -20,6 +21,18 @@ class Address(BaseModel):
     teacher: str
     learner: str
 
+    def fill(self, template: str) -> str:
+        """Fill {teacher}/{learner} (capitalised: {Teacher}/{Learner}) in a template."""
+        return template.format(
+            teacher=self.teacher,
+            learner=self.learner,
+            Teacher=self.teacher[:1].upper() + self.teacher[1:],
+            Learner=self.learner[:1].upper() + self.learner[1:],
+        )
+
+
+ADDRESS_FIELDS = frozenset({"teacher", "learner", "Teacher", "Learner"})
+
 
 class Persona(BaseModel):
     id: str
@@ -28,10 +41,20 @@ class Persona(BaseModel):
     age_band: AgeBand  # the teacher's own age group
     personality: str  # English description, rendered into the session prompt layer
     address: dict[AgeBand, Address]  # keyed by the learner's age band
-    switch_greeting: str  # fixed Vietnamese line played when the learner switches to this teacher
+    # Fixed Vietnamese line played when the learner switches to this teacher; a template with
+    # {teacher}/{learner} ({Teacher}/{Learner} capitalised) so it fits every learner age band.
+    switch_greeting: str
     fillers: dict[str, list[str]] = Field(default_factory=dict)  # voice channel only
     voice_id: str | None = None
     status: Literal["draft", "published"] = "published"
+
+    @field_validator("switch_greeting")
+    @classmethod
+    def _known_placeholders(cls, value: str) -> str:
+        names = {name for _, name, _, _ in Formatter().parse(value) if name is not None}
+        if not names <= ADDRESS_FIELDS:
+            raise ValueError(f"unknown placeholders {sorted(names - ADDRESS_FIELDS)}")
+        return value
 
 
 class LearnerProfile(BaseModel):

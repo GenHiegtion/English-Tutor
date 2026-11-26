@@ -17,6 +17,9 @@ from ea_llm.teacher.persona import MAX_WORDS_PER_SENTENCE, VI_TARGET_PCT
 from ea_llm.teacher.wordlist import MAX_UNKNOWN_SHARE, CefrWordlist
 
 VI_RATIO_TOLERANCE = 20  # percentage points
+# Vietnamese emergency lines the prompt may give a learner in distress: child protection,
+# police, fire, ambulance. They need no source.
+HOTLINES = frozenset({111.0, 113.0, 114.0, 115.0})
 MAX_SENTENCES = 4
 MAX_MISTAKES_PER_TURN = 2
 
@@ -29,7 +32,9 @@ _PERSONAL_INFO_RE = re.compile(
     r"số điện thoại|địa chỉ nhà|phone number|home address|học trường nào|which school", re.I
 )
 _QUOTED_RE = re.compile(r"\"[^\"]*\"|“[^”]*”|'[^']*'|‘[^’]*’")
-_COMPOUND_RE = re.compile(r"bạn bè|bạn học|bạn cùng lớp|chúng tôi|bạn thân", re.I)
+_COMPOUND_RE = re.compile(
+    r"bạn bè|bạn học|bạn cùng lớp|bạn thân|bạn trai|bạn gái|người bạn|kết bạn|chúng tôi", re.I
+)
 _SENTENCE_END_RE = re.compile(r"[.!?…]+(\s|$)")
 _SMALL_NUMBERS = (
     "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
@@ -200,5 +205,5 @@ def ungrounded_numbers(segments: list[Segment], grounding: Iterable[str]) -> set
     said = set().union(*(_number_values(s.text) for s in segments)) if segments else set()
     if not said:
         return set()
-    known = set().union(*(_number_values(t) for t in grounding))
+    known = set().union(HOTLINES, *(_number_values(t) for t in grounding))
     return said - known

@@ -93,6 +93,7 @@ def test_address_mismatch_ignores_quotes_and_compounds():
     assert "address_mismatch" in turn_flags([seg("Bạn nói rất tốt")])
     assert "address_mismatch" not in turn_flags([seg('Câu "bạn có khỏe không" nghĩa là gì')])
     assert "address_mismatch" not in turn_flags([seg("Em nói với bạn bè nhé")])
+    assert "address_mismatch" not in turn_flags([seg("Em hãy nói với một người bạn nhé")])
     assert "address_mismatch" not in turn_flags([seg("Em nói rất tốt")])
 
 
@@ -120,14 +121,16 @@ def test_ungrounded_numbers_need_a_source():
     five = [seg("Five years is a long time. Which one do you like?", "en")]
     assert "ungrounded_number" not in turn_flags(five, grounding=["I work here for 5 years"])
     assert guards.ungrounded_numbers([seg("It costs 1,000 dollars", "en")], ["1000"]) == set()
+    hotline = [seg("Nếu em gặp nguy hiểm, hãy gọi 115 hoặc 111 nhé.")]
+    assert guards.ungrounded_numbers(hotline, []) == set()
 
 
 WORDLIST_YAML = """
 source: test fixture
 reviewed_by: tester
 levels:
-  A1: [i, you, a, the, like, coffee, want, to, go, is, it, stop, city]
-  A2: [would, cup, of, please]
+  A1: [i, you, a, the, like, coffee, want, to, go, is, it, stop, city, big, happy, cry]
+  A2: [would, cup, of, please, name]
   B1: [delicious]
 """
 
@@ -143,6 +146,8 @@ def test_wordlist_is_cumulative_and_handles_simple_inflections(wordlist):
     assert wordlist.knows("coffee", "B1") and not wordlist.knows("would", "A1")
     assert wordlist.knows("likes", "A1") and wordlist.knows("liked", "A1")
     assert wordlist.knows("stopped", "A1") and wordlist.knows("cities", "A1")
+    assert wordlist.knows("bigger", "A1") and wordlist.knows("happiest", "A1")
+    assert wordlist.knows("cried", "A1")
     assert wordlist.reviewed_by == "tester"
 
 
@@ -151,6 +156,17 @@ def test_wordlist_unknown_share_skips_proper_nouns_and_exempt_words(wordlist):
     assert wordlist.unknown_share("I like coffee in Hanoi", "A1", frozenset({"in"})) == 0.0
     # A1 learners are checked against A2 words (level + 1)
     assert wordlist.unknown_share("I would like a cup of coffee", "A1") == 0.0
+    # a capitalised first word counts unless it is no word at all (a name)
+    assert wordlist.unknown_share("Mimi is a name", "A1") == 0.0
+    assert wordlist.unknown_share("Delicious coffee", "A1") == pytest.approx(0.5)
+
+
+def test_shipped_wordlist_covers_irregular_and_everyday_forms():
+    shipped = load_wordlist()
+    assert shipped is not None and "CEFR-J" in shipped.source
+    for word in ("is", "went", "children", "don't", "better", "I'm", "okay", "Mr"):
+        assert shipped.knows(word, "A1"), word
+    assert not shipped.knows("meticulous", "B2")
 
 
 def test_cefr_overshoot_uses_the_wordlist(wordlist):

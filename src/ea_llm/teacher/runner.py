@@ -196,7 +196,8 @@ class TeacherService:
         switch_note = None
         if ctx.persona_id != snapshot.persona_id:
             switch_note = await self._switch_persona(turn)
-            yield self._segment_event(turn, "vi", persona.switch_greeting)
+            greeting = turn.snapshot.address.fill(persona.switch_greeting)
+            yield self._segment_event(turn, "vi", greeting)
 
         if ctx.learner_input is None:
             if ctx.mode == "scenario" and not stored:
@@ -402,8 +403,7 @@ class TeacherService:
                 turn.ctx.session_id,
                 turn.ctx.turn_id,
             )
-            line = phrases.back_to_lesson(turn.snapshot.address)
-            return [self._segment_event(turn, "vi", line)]
+            return [self._segment_event(turn, "vi", phrases.BACK_TO_LESSON)]
         if result.segment is None:
             return []
         kept = result.segment
@@ -483,7 +483,7 @@ class TeacherService:
             return []
         if turn.stop == "refusal":
             turn.flags.append("refusal")
-            return [self._segment_event(turn, "vi", phrases.back_to_lesson(address))]
+            return [self._segment_event(turn, "vi", phrases.BACK_TO_LESSON)]
         if turn.model_segments == 0:
             turn.flags.append("empty_turn")
             text = phrases.retry_prompt(address, turn.ctx.channel)

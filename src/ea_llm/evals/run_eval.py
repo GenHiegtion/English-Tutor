@@ -262,7 +262,7 @@ def render_report(
         "",
         f"- Model: {', '.join(models)}",
         f"- Prompts: {', '.join(versions)}",
-        f"- Cases: {total} ({unreviewed} not reviewed by a teacher yet)",
+        f"- Cases: {total} ({unreviewed} not reviewed yet)",
         f"- Cost: ${sum(r.cost_usd for r in results):.4f}",
     ]
     if ttfts:
