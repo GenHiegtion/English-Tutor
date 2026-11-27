@@ -52,7 +52,7 @@ from english_tutor.api.schemas import (
 from english_tutor.api.settings import ApiSettings
 from english_tutor.api.turns import TurnBusy, TurnStreams
 from english_tutor.bootstrap import build_service
-from english_tutor.models import LearnerProfile, SessionSnapshot
+from english_tutor.models import LearnerProfile, SessionState
 from english_tutor.ports import ScenarioStore
 from english_tutor.teacher.context import LearnerInput, TurnContext
 from english_tutor.teacher.display import to_display
@@ -247,9 +247,10 @@ async def run_turn(
     session_id: str, body: CreateTurn, state: StateDep, caller: CallerDep
 ) -> StreamingResponse:
     """Run one teacher turn and stream its events (409 while another turn of it runs)."""
-    snapshot = await _session_for(state, caller, session_id)
-    if await state.service.history.is_closed(session_id):
+    session = await _session_for(state, caller, session_id)
+    if session.closed:
         raise ApiError(409, "session_closed", "the session has ended")
+    snapshot = session.snapshot
     _limit(state.turn_limits, snapshot.user_id)
     ctx = TurnContext(
         session_id=session_id,
@@ -414,12 +415,12 @@ def _session_owner(body: CreateSession, caller: Caller) -> str:
     return caller.user_id
 
 
-async def _session_for(state: ServiceState, caller: Caller, session_id: str) -> SessionSnapshot:
+async def _session_for(state: ServiceState, caller: Caller, session_id: str) -> SessionState:
     """The session if the caller may use it; 404 otherwise (other users' ids are not revealed)."""
-    snapshot = await state.service.history.load_session(session_id)
-    if snapshot is None or not caller.can_access(snapshot):
+    session = await state.service.history.load_session_state(session_id)
+    if session is None or not caller.can_access(session.snapshot):
         raise ApiError(404, "session_not_found", "unknown session")
-    return snapshot
+    return session
 
 
 def _limit(limiter: SlidingWindowLimiter, key: str) -> None:

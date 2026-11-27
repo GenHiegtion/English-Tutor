@@ -82,6 +82,13 @@ class SessionSnapshot(BaseModel):
     window_start: int = 0  # index of the first stored message sent to the model
 
 
+class SessionState(BaseModel):
+    """A stored session as the API checks it before a request: snapshot and open/ended."""
+
+    snapshot: SessionSnapshot
+    closed: bool
+
+
 class StoredMessage(BaseModel):
     turn_id: str
     message: Message

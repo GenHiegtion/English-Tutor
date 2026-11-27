@@ -5,7 +5,12 @@ columns); this module never creates or migrates them. ``METADATA`` mirrors only 
 read or written below, so tests can create the tables on SQLite. Keep it in sync with
 ``api/app/models.py`` of English-Teacher.
 
-Every method opens its own short transaction, so no connection is held across an LLM call.
+Every method takes a pooled connection for one short step, so no connection is held across an
+LLM call. The database may be far away (one round trip can take 0.2 s), so each method keeps
+its round trips low: reads run in autocommit (no BEGIN/ROLLBACK), single statements commit on
+their own, and the pool does not ping connections before use; a connection the server closed
+in the meantime is replaced and the step retried once, which is safe because every write is
+idempotent.
 """
 
 from __future__ import annotations
@@ -14,9 +19,10 @@ import asyncio
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import get_args
+from typing import Any, get_args
 
 from pydantic import ValidationError
 from sqlalchemy import (
@@ -24,6 +30,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Executable,
     Float,
     Integer,
     MetaData,
@@ -31,14 +38,17 @@ from sqlalchemy import (
     Table,
     Text,
     Uuid,
+    exists,
     func,
     insert,
     select,
     text,
     update,
 )
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from english_tutor.models import (
     AgeBand,
@@ -46,6 +56,7 @@ from english_tutor.models import (
     LearnerProfile,
     Persona,
     SessionSnapshot,
+    SessionState,
     StoredMessage,
     TurnRecord,
     UsageRecord,
@@ -185,7 +196,8 @@ def create_engine(url: str) -> AsyncEngine:
         return create_async_engine(url)
     return create_async_engine(
         url,
-        pool_pre_ping=True,
+        # No pool_pre_ping: it costs a round trip per query. Dropped connections are retried
+        # instead (_retrying), and pool_recycle replaces old ones before the server drops them.
         pool_size=POOL_SIZE,
         max_overflow=POOL_MAX_OVERFLOW,
         pool_recycle=POOL_RECYCLE_S,
@@ -197,8 +209,57 @@ def create_engine(url: str) -> AsyncEngine:
 
 async def ping(engine: AsyncEngine) -> None:
     """Raise if the database cannot answer a trivial query."""
+    await _read(engine, text("SELECT 1"))
+
+
+@asynccontextmanager
+async def _autocommit(engine: AsyncEngine) -> AsyncIterator[AsyncConnection]:
+    """A pooled connection in autocommit: each read is one round trip, no BEGIN/ROLLBACK."""
     async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
+        yield await conn.execution_options(isolation_level="AUTOCOMMIT")
+
+
+async def _retrying[T](step: Callable[[], Awaitable[T]]) -> T:
+    """Run ``step`` once more when the server had closed the pooled connection it got."""
+    try:
+        return await step()
+    except DBAPIError as exc:
+        if not exc.connection_invalidated:
+            raise
+        logger.info("database connection was closed by the server; retrying on a new one")
+        return await step()
+
+
+async def _read(engine: AsyncEngine, *queries: Executable) -> list[Sequence[Row[Any]]]:
+    """The rows of each query, all on one connection (one round trip per query)."""
+
+    async def step() -> list[Sequence[Row[Any]]]:
+        async with _autocommit(engine) as conn:
+            return [(await conn.execute(query)).all() for query in queries]
+
+    return await _retrying(step)
+
+
+async def _write_one(engine: AsyncEngine, statement: Executable) -> int:
+    """Run one statement that commits on its own (atomic as a single statement); rows changed."""
+
+    async def step() -> int:
+        async with _autocommit(engine) as conn:
+            return (await conn.execute(statement)).rowcount
+
+    return await _retrying(step)
+
+
+async def _transaction[T](
+    engine: AsyncEngine, work: Callable[[AsyncConnection], Awaitable[T]]
+) -> T:
+    """Run ``work`` in one transaction (BEGIN ... COMMIT)."""
+
+    async def step() -> T:
+        async with engine.begin() as conn:
+            return await work(conn)
+
+    return await _retrying(step)
 
 
 def parse_uuid(value: str) -> uuid.UUID | None:
@@ -225,74 +286,64 @@ class SqlHistoryStore:
         self._clock = clock
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
+        """Insert the session row, or update its teacher and snapshot: one upsert statement."""
         sid = _require_uuid(snapshot.session_id, "session_id")
-        payload = snapshot.model_dump(mode="json")
-        async with self._engine.begin() as conn:
-            exists = await conn.scalar(select(sessions.c.id).where(sessions.c.id == sid))
-            if exists is not None:
-                await conn.execute(
-                    update(sessions)
-                    .where(sessions.c.id == sid)
-                    .values(
-                        persona_id=snapshot.persona_id,
-                        prompt_version=snapshot.prompt_version,
-                        snapshot=payload,
-                    )
-                )
-                return
-            await conn.execute(
-                insert(sessions).values(
-                    id=sid,
-                    user_id=_require_uuid(snapshot.user_id, "user_id"),
-                    scenario_id=snapshot.scenario.id if snapshot.scenario else None,
-                    status=SESSION_ACTIVE,
-                    channel=snapshot.channel,
-                    mode=snapshot.mode,
-                    persona_id=snapshot.persona_id,
-                    prompt_version=snapshot.prompt_version,
-                    snapshot=payload,
-                    started_at=self._clock(),
-                    seconds=0,
-                )
-            )
+        row = {
+            "id": sid,
+            "user_id": _require_uuid(snapshot.user_id, "user_id"),
+            "scenario_id": snapshot.scenario.id if snapshot.scenario else None,
+            "status": SESSION_ACTIVE,
+            "channel": snapshot.channel,
+            "mode": snapshot.mode,
+            "persona_id": snapshot.persona_id,
+            "prompt_version": snapshot.prompt_version,
+            "snapshot": snapshot.model_dump(mode="json"),
+            "started_at": self._clock(),
+            "seconds": 0,
+        }
+        await _write_one(self._engine, _upsert_session(self._engine.dialect.name, row))
 
     async def load_session(self, session_id: str) -> SessionSnapshot | None:
         """The snapshot of an English Tutor session; None for unknown ids and legacy sessions."""
+        state = await self.load_session_state(session_id)
+        return state.snapshot if state else None
+
+    async def load_session_state(self, session_id: str) -> SessionState | None:
+        """Snapshot and ended flag in one query; None for unknown ids and legacy sessions."""
         sid = parse_uuid(session_id)
         if sid is None:
             return None
-        async with self._engine.connect() as conn:
-            raw = await conn.scalar(select(sessions.c.snapshot).where(sessions.c.id == sid))
-        return SessionSnapshot.model_validate(raw) if raw else None
+        (rows,) = await _read(self._engine, _session_query(sid))
+        return _session_state(rows)
 
     async def load_messages(self, session_id: str) -> list[StoredMessage]:
         sid = parse_uuid(session_id)
         if sid is None:
             return []
-        query = (
-            select(
-                messages.c.turn_id,
-                messages.c.role,
-                messages.c.content,
-                messages.c.persona_id,
-                messages.c.guard_flags,
-                messages.c.tool_statuses,
-            )
-            .where(
-                messages.c.session_id == sid,
-                messages.c.turn_id.is_not(None),
-                messages.c.content.is_not(None),
-            )
-            .order_by(messages.c.idx)
-        )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(query)).all()
+        (rows,) = await _read(self._engine, _messages_query(sid))
         return [_stored_message(row) for row in rows]
+
+    async def load_conversation(
+        self, session_id: str
+    ) -> tuple[SessionSnapshot | None, list[StoredMessage]]:
+        """Snapshot and messages on one connection: two round trips before the LLM call."""
+        sid = parse_uuid(session_id)
+        if sid is None:
+            return None, []
+        session_rows, message_rows = await _read(
+            self._engine, _session_query(sid), _messages_query(sid)
+        )
+        state = _session_state(session_rows)
+        if state is None:
+            return None, []
+        return state.snapshot, [_stored_message(row) for row in message_rows]
 
     async def append_turn(self, session_id: str, turn: TurnRecord) -> None:
         sid = _require_uuid(session_id, "session_id")
-        async with self._engine.begin() as conn:
-            # Row lock: turns of one session are written one after the other.
+
+        async def work(conn: AsyncConnection) -> None:
+            # Row lock: turns of one session are written one after the other. The next query
+            # runs after the lock is held, so it sees what an earlier writer committed.
             session = (
                 await conn.execute(
                     select(sessions.c.prompt_version, sessions.c.channel, sessions.c.mode)
@@ -302,17 +353,22 @@ class SqlHistoryStore:
             ).first()
             if session is None:
                 raise LookupError(f"cannot store turn {turn.turn_id}: unknown session {sid}")
-            duplicate = await conn.scalar(
-                select(messages.c.id)
-                .where(messages.c.session_id == sid, messages.c.turn_id == turn.turn_id)
-                .limit(1)
-            )
-            if duplicate is not None:
+            seen = (
+                await conn.execute(
+                    select(
+                        exists()
+                        .where(messages.c.session_id == sid, messages.c.turn_id == turn.turn_id)
+                        .label("duplicate"),
+                        select(func.max(messages.c.idx))
+                        .where(messages.c.session_id == sid)
+                        .scalar_subquery()
+                        .label("last_idx"),
+                    )
+                )
+            ).one()
+            if seen.duplicate:
                 return
-            last_idx = await conn.scalar(
-                select(func.max(messages.c.idx)).where(messages.c.session_id == sid)
-            )
-            first_idx = 0 if last_idx is None else last_idx + 1
+            first_idx = 0 if seen.last_idx is None else seen.last_idx + 1
             created_at = self._clock()
             if turn.messages:
                 await conn.execute(
@@ -328,28 +384,22 @@ class SqlHistoryStore:
                     [_usage_row(sid, record, session, created_at) for record in turn.usage],
                 )
 
+        await _transaction(self._engine, work)
+
     async def close_session(self, session_id: str) -> bool:
         sid = parse_uuid(session_id)
         if sid is None:
             return False
-        async with self._engine.begin() as conn:
-            result = await conn.execute(
-                update(sessions)
-                .where(sessions.c.id == sid, sessions.c.snapshot.is_not(None))
-                .values(
-                    status=SESSION_DONE,
-                    ended_at=func.coalesce(sessions.c.ended_at, self._clock()),
-                )
-            )
-        return result.rowcount > 0
-
-    async def is_closed(self, session_id: str) -> bool:
-        sid = parse_uuid(session_id)
-        if sid is None:
-            return False
-        async with self._engine.connect() as conn:
-            status = await conn.scalar(select(sessions.c.status).where(sessions.c.id == sid))
-        return status == SESSION_DONE
+        changed = await _write_one(
+            self._engine,
+            update(sessions)
+            .where(sessions.c.id == sid, sessions.c.snapshot.is_not(None))
+            .values(
+                status=SESSION_DONE,
+                ended_at=func.coalesce(sessions.c.ended_at, self._clock()),
+            ),
+        )
+        return changed > 0
 
 
 class SqlLearnerStore:
@@ -366,8 +416,8 @@ class SqlLearnerStore:
         query = select(users.c.name, users.c.level, users.c.age_band, users.c.disabled_at).where(
             users.c.id == uid
         )
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(query)).first()
+        (rows,) = await _read(self._engine, query)
+        row = rows[0] if rows else None
         if row is None or row.disabled_at is not None:
             return None
         return LearnerProfile(
@@ -415,8 +465,7 @@ class SqlPersonaStore:
         return (await self._catalog.items()).get(persona_id)
 
     async def _load(self) -> dict[str, Persona]:
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(select(teacher_personas).order_by("id"))).all()
+        (rows,) = await _read(self._engine, select(teacher_personas).order_by("id"))
         loaded: dict[str, Persona] = {}
         for row in rows:
             try:
@@ -464,8 +513,7 @@ class SqlScenarioStore:
             .where(scenarios.c.active.is_(True))
             .order_by(scenarios.c.level, scenarios.c.id)
         )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(query)).all()
+        (rows,) = await _read(self._engine, query)
         loaded: dict[str, ScenarioRef] = {}
         for row in rows:
             try:
@@ -480,6 +528,53 @@ def _require_uuid(value: str, field: str) -> uuid.UUID:
     if parsed is None:
         raise ValueError(f"{field} must be a UUID for the app database")
     return parsed
+
+
+def _session_query(sid: uuid.UUID) -> Executable:
+    return select(sessions.c.snapshot, sessions.c.status).where(sessions.c.id == sid)
+
+
+def _session_state(rows: Sequence[Row[Any]]) -> SessionState | None:
+    """The session of a ``_session_query`` result; None when missing or a legacy session."""
+    if not rows or not rows[0].snapshot:
+        return None
+    return SessionState(
+        snapshot=SessionSnapshot.model_validate(rows[0].snapshot),
+        closed=rows[0].status == SESSION_DONE,
+    )
+
+
+def _messages_query(sid: uuid.UUID) -> Executable:
+    return (
+        select(
+            messages.c.turn_id,
+            messages.c.role,
+            messages.c.content,
+            messages.c.persona_id,
+            messages.c.guard_flags,
+            messages.c.tool_statuses,
+        )
+        .where(
+            messages.c.session_id == sid,
+            messages.c.turn_id.is_not(None),
+            messages.c.content.is_not(None),
+        )
+        .order_by(messages.c.idx)
+    )
+
+
+def _upsert_session(dialect: str, row: dict[str, Any]) -> Executable:
+    """INSERT the session row; on a known id only its teacher and snapshot change."""
+    dialects = {"postgresql": postgresql.insert, "sqlite": sqlite.insert}
+    if dialect not in dialects:
+        raise ValueError(f"unsupported database dialect: {dialect}")
+    statement = dialects[dialect](sessions).values(**row)
+    return statement.on_conflict_do_update(
+        index_elements=[sessions.c.id],
+        set_={
+            name: statement.excluded[name] for name in ("persona_id", "prompt_version", "snapshot")
+        },
+    )
 
 
 def _stored_message(row: Row) -> StoredMessage:
