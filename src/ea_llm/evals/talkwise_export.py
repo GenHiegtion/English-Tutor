@@ -13,8 +13,8 @@ The output (``exports/<time>/``, gitignored) is never loaded by the eval runner:
 coding agent picks lines from ``draft_cases.yaml``, writes the ``expect`` block and moves them
 into ``evals/cases/teacher/``.
 
-Run (needs the ``export`` extra and TALKWISE_DATABASE_URL, ideally a read-only Neon role):
-    uv run --extra export python -m ea_llm.evals.talkwise_export [--limit 200]
+Run (needs DATABASE_URL, the same Talkwise database the service uses; only SELECTs are sent):
+    uv run python -m ea_llm.evals.talkwise_export [--limit 200]
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from typing import Any
 
 import yaml
 
-ENV_URL = "TALKWISE_DATABASE_URL"
+ENV_URL = "DATABASE_URL"
 OUT_DIR = Path("exports")
 HISTORY_TURNS = 2  # earlier learner/teacher pairs kept before each drafted learner line
 

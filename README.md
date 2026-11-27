@@ -1,54 +1,124 @@
 # EA-LLM
 
-LLM module for the Talkwise English-learning app. A Vietnamese-speaking teacher persona teaches
-English **in Vietnamese**; the module is a Python library (not a server) that the web backend and
-the voice bot import.
+Teacher service of the Talkwise English-learning app. A Vietnamese-speaking teacher persona
+teaches English **in Vietnamese**. EA-LLM is the only AI core: a FastAPI service (deployed on
+Railway) that the Talkwise backend and browsers call for text chat, and the Pipecat voice bot
+calls for voice. Talkwise itself holds no AI code.
 
-- **Text in, text out.** The module never touches audio, a database driver or a web framework.
+- **Text in, text out.** Audio, STT and TTS stay in the voice bot.
 - **Channels:** `text` (implemented), `voice` (planned: parser and tool schemas are ready, the
   voice prompt is not). **Modes:** `scenario` and `free_chat` (implemented), `lesson` (planned).
 - **Teachers:** several personas (age, gender, personality); pronouns adapt to the learner's age.
 - **Models:** all calls go through [OpenRouter](https://openrouter.ai) with the Anthropic SDK
   (Haiku 5.5 primary, GPT-6 Luna as hedged fallback).
+- **Data:** the Talkwise Postgres database (Neon). Talkwise's Alembic migrations own the schema;
+  EA-LLM never creates or migrates tables.
 
 ## Quick start
 
 ```bash
-uv sync --extra server          # install everything, including the dev server
+uv sync                         # install everything
 cp .env.example .env            # then set OPENROUTER_API_KEY
 uv run ea-llm chat              # scenario lesson in the terminal (default: cafe-order)
 uv run ea-llm chat --mode free_chat --interests football,music
 uv run ea-llm chat --list       # teachers and scenarios
 uv run ea-llm chat --offline    # no network, canned replies
-uv run ea-llm serve             # HTTP dev server, interactive docs at http://127.0.0.1:8000/docs
+uv run ea-llm serve             # local server, docs at http://127.0.0.1:8000/docs
 ```
 
 `uv run ea-llm chat --help` lists every option (teacher, CEFR level, age band, name, ...).
+`ea-llm serve` uses in-memory stores and seed data and needs no credentials; it is for local
+development only (`--offline` also skips OpenRouter).
 
 ### Environment
 
-| Variable | Required | Used by | Meaning |
-| --- | --- | --- | --- |
-| `OPENROUTER_API_KEY` | yes, except `--offline` | library | OpenRouter key for every LLM call |
-| `EA_LLM_<ROLE>_MODEL` | no | library | override the primary model of a role (`TEACHER`, `EXAMINER`, `REPORTER`, `WRITER`) |
-| `EA_LLM_<ROLE>_FALLBACK_MODEL` | no | library | override the hedged fallback; `none` disables it |
-| `EA_LLM_LOG_LEVEL` | no (default `WARNING`) | CLI, dev server | level of the `ea_llm` loggers |
+| Variable | Required | Meaning |
+| --- | --- | --- |
+| `OPENROUTER_API_KEY` | yes, except `--offline` | OpenRouter key for every LLM call |
+| `EA_LLM_<ROLE>_MODEL` | no | override the primary model of a role (`TEACHER`, `EXAMINER`, `REPORTER`, `WRITER`) |
+| `EA_LLM_<ROLE>_FALLBACK_MODEL` | no | override the hedged fallback; `none` disables it |
+| `EA_LLM_LOG_LEVEL` | no | level of the `ea_llm` loggers (CLI default `WARNING`, service `INFO`) |
+| `DATABASE_URL` | service, eval export | Talkwise Postgres URL (see "Database role" below) |
+| `EA_LLM_TALKWISE_API_KEY` | service, one credential at least | key of the Talkwise backend |
+| `EA_LLM_PIPECAT_API_KEY` | service, one credential at least | key of the voice bot |
+| `EA_LLM_TOKEN_SECRET` | service, one credential at least | HS256 secret shared with Talkwise for learner tokens |
+| `EA_LLM_CORS_ORIGINS` | no | comma-separated web origins allowed to call the service |
+| `EA_LLM_DOCS` | no | `off` hides `/docs` and `/openapi.json` |
+| `EA_LLM_TURNS_PER_MINUTE` / `EA_LLM_SESSIONS_PER_HOUR` | no | per-learner limits (20 / 30) |
 
 Model ids are OpenRouter ids (`vendor/model`); unset or empty keeps the defaults in
 `src/ea_llm/config.py`. Token limits, effort and timeouts stay in code because they are tuned
-with the prompts. The library reads these variables from the process environment; only the CLI
-and dev server load `.env`, so a host application sets them in its own environment (e.g. Render).
-
-The library never configures logging; a host application sets up its own handlers for the
-`ea_llm` logger. Database settings do not belong here: the module reaches data only through the
-ports below, and the host application owns the connection.
+with the prompts. API keys and the token secret need at least 32 characters
+(`openssl rand -hex 32`), and each caller gets its own key. `.env` is loaded when present;
+on Railway the variables come from the service settings.
 
 Run `scripts/check.sh` after changes: it lints, checks formatting, runs the tests (extra
 arguments go to pytest) and then removes generated caches (`.pytest_cache`, `.hypothesis`,
 `__pycache__`, ...), even when a check fails. `scripts/check.sh clean` only cleans (`--all` also
 removes `.venv`).
 
-## How it is used
+## HTTP API
+
+The OpenAPI docs at `/docs` (and `/openapi.json`) are the contract for both callers.
+
+| Endpoint | What it does | Callers |
+| --- | --- | --- |
+| `GET /health` | liveness and readiness (checks the database) | Railway |
+| `GET /personas` | published teachers | web, bot |
+| `GET /scenarios` | active role-play scenarios | web, bot |
+| `POST /sessions` | open a session (teacher, mode, scenario); the learner profile comes from `users` | web, bot |
+| `POST /sessions/{id}/turns` | one teacher turn, streamed as Server-Sent Events | web, bot |
+| `POST /sessions/{id}/turns/{turn_id}/delivered` | last segment the learner received | bot, web |
+| `GET /sessions/{id}/messages` | the conversation as the learner saw it | web |
+| `POST /sessions/{id}/end` | close the session | web, bot |
+| `GET /schema/events` | JSON Schema of the stream events | developers |
+
+**Authentication.** Backend services send `X-API-Key` and name the `user_id` themselves; they
+may also override profile fields for a session (`learner`). Browsers send
+`Authorization: Bearer <token>`: an HS256 JWT minted by the Talkwise backend with
+`EA_LLM_TOKEN_SECRET`, claims `sub` (user id), `aud` = `ea-llm`, `iat`, `exp` (at most one hour
+after `iat`) and optionally `sid` (limits the token to one session). A learner only reaches
+their own sessions; other ids answer 404.
+
+**Turn stream.** Each SSE message is `event: <kind>` + `data: <json>`, with `kind` one of
+`segment`, `board`, `mistake`, `terminal`, `turn_end`, `turn_failed`. Closing the stream
+cancels the turn; call `delivered` first so only what the learner received is kept. One turn
+runs at a time per session: a new turn waits up to 5 s for the previous one (a barge-in), then
+gets 409 `turn_in_progress`.
+
+**Errors.** Every non-2xx response is `{"error": {"code": "...", "message": "..."}}` (validation
+errors add `details` with field locations, never the rejected input).
+
+### Deploying on Railway
+
+`railway.json` sets the start command (`python -m ea_llm.api`, listening on `$PORT`), the
+`/health` check and **one replica**: turn locks, `delivered` positions and rate limits live in
+the process. Set the service variables above, then generate a domain; the docs are at
+`https://<name>.up.railway.app/docs`. Logs are JSON lines on stdout, one access line per
+request (method, route, status, duration, caller), with no query strings or bodies.
+
+### Database role
+
+The service reads `users`, `teacher_personas` and `scenarios`, and writes `sessions`,
+`messages` and `ai_usage_logs` (columns from Talkwise migration `0030`). Give it its own Neon
+role with only those rights rather than the Talkwise owner role. Neon's pooled endpoint works:
+psycopg runs without server-side prepared statements.
+
+```bash
+uv run python scripts/check_db.py                 # read-only: role, columns, rights, teachers
+uv run python scripts/seed_personas.py            # dry run: what would change in teacher_personas
+uv run python scripts/seed_personas.py --apply    # copy src/ea_llm/data/personas.yaml into it
+```
+
+`check_db.py` exits with 1 when the service could not run on that database (a missing column or
+right, no published teacher). `seed_personas.py` inserts new teachers and updates changed ones
+(raising `version`); it never touches `voice`, `avatar_key` or teachers missing from the YAML.
+The service role cannot write `teacher_personas`, so pass `--url-env NAME` with an owner URL.
+
+## Teacher core
+
+The HTTP layer is a thin shell around `TeacherService`, which stays free of web and database
+code so tests need no network:
 
 ```python
 from ea_llm.providers.openrouter_provider import OpenRouterProvider
@@ -66,28 +136,20 @@ async for event in service.run_turn(turn_context):   # OutputSegment, BoardUpdat
 ```
 
 Events are `OutputSegment` (a `<vi>`/`<en>` piece of speech), `BoardUpdate`, `MistakeNoted`,
-`TerminalAction`, `TurnEnd` and `TurnFailed`. Their JSON schemas are served at `/schema/events`
-by the dev server. To cancel a turn, close the async generator; call
+`TerminalAction`, `TurnEnd` and `TurnFailed`. To cancel a turn, close the async generator; call
 `service.mark_delivered(turn_id, seq)` first so only segments the learner actually received are
 kept in the history.
 
 ### Ports
 
-The module reads and writes data only through `ea_llm.ports` (`HistoryStore`, `PersonaStore`,
-`LearnerStore`). `ea_llm.adapters.memory` implements them in memory for development and tests;
-the backend provides real implementations (SQLAlchemy) when merging. Rules for every
-implementation:
+The core reads and writes data only through `ea_llm.ports` (`HistoryStore`, `PersonaStore`,
+`LearnerStore`, `ScenarioStore`). `ea_llm.adapters.sql` implements them on the Talkwise database
+(SQLAlchemy async, psycopg 3); `ea_llm.adapters.memory` implements them in memory for the CLI,
+the local server, evals and tests. Rules for every implementation:
 
 1. All methods are `async`; run blocking drivers in a thread.
 2. Never hold a DB connection while waiting for the LLM; open a short session per call.
 3. Writes are idempotent on their natural key (`turn_id`), so retries are safe.
-
-### HTTP API
-
-`ea_llm.devserver` (FastAPI, `serve` extra) exposes the service for manual testing and for
-front-end developers: sessions, SSE turn streams, catalog and event schemas, with Swagger UI at
-`/docs`. It is a development tool. In production the Talkwise backend owns the public API,
-authentication and persistence.
 
 ## Evals
 
@@ -112,11 +174,11 @@ Runs land in `eval_runs/` (gitignored). `report` re-applies the current rule che
 baseline stays comparable; with `--baseline` it lists cases that newly fail or lost a judge point.
 Each case runs once, so a single run can move by a case or two from model randomness.
 
-New cases can be drafted from real Talkwise sessions with a read-only export (needs the `export`
-extra and `TALKWISE_DATABASE_URL`):
+New cases can be drafted from real Talkwise sessions with a read-only export (reads
+`DATABASE_URL`, sends only SELECTs):
 
 ```bash
-uv run --extra export python -m ea_llm.evals.talkwise_export --limit 200
+uv run python -m ea_llm.evals.talkwise_export --limit 200
 ```
 
 It writes `exports/<time>/` (gitignored): masked conversations, the public scenarios and one draft
@@ -133,14 +195,14 @@ src/ea_llm/
   providers/      LLM contracts (base.py) and the OpenRouter adapter
   prompts/        versioned prompt templates, registry (prompt_version) and builder
   teacher/        parser, tools, guards, history, hedged streaming, runner, personas
-  adapters/       in-memory port implementations
+  api/            FastAPI service: routes, auth, settings, turn streams, rate limits, JSON logs
+  adapters/       port implementations: Talkwise database (sql.py) and in-memory
   data/           seed teachers and scenarios (mirror the DB tables), prices, blocked terms
   pricing.py      price table and cost estimates for calls without a reported cost
   evals/          eval cases, rule checks + judge handoff (run_eval), latency/cost benchmark
-  cli.py          terminal chat and `serve`
-  devserver.py    FastAPI dev server
+  cli.py          terminal chat and `serve` (local server)
   testing.py      FakeProvider for tests and offline mode
-tests/            unit and integration tests (no network)
+tests/            unit and integration tests (no network; the SQL adapter runs on SQLite)
 scripts/          check.sh (lint, format, tests, clean), build_wordlist.py
 ```
 

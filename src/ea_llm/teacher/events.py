@@ -62,7 +62,8 @@ class TurnEnd(BaseModel):
 class TurnFailed(BaseModel):
     kind: Literal["turn_failed"] = "turn_failed"
     turn_id: str
-    reason: Literal["providers_down", "invalid_context", "quota_exceeded"]
+    # internal_error: an unexpected failure in the service itself (logged server-side)
+    reason: Literal["providers_down", "invalid_context", "quota_exceeded", "internal_error"]
 
 
 TeacherEvent = Annotated[
