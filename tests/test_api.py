@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 
@@ -5,6 +6,7 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
+import ea_llm.api.app as app_module
 from ea_llm.adapters.memory import (
     MemoryHistoryStore,
     MemoryLearnerStore,
@@ -327,3 +329,35 @@ def test_dev_app_needs_no_credentials():
         sid = open_session(client, headers={}, user_id="dev-user")
         events = parse_sse(client.post(f"/sessions/{sid}/turns", json={}, headers={}).text)
         assert events[-1][0] == "turn_end"
+
+
+async def test_slow_database_ping_keeps_running_after_health_gives_up(monkeypatch):
+    calls = []
+
+    async def slow_ping(engine):
+        calls.append(engine)
+        if len(calls) == 1:
+            await asyncio.sleep(0.2)  # the first connection to a cold database; later ones reuse it
+
+    monkeypatch.setattr(app_module, "ping", slow_ping)
+    probe = app_module.DatabaseProbe(engine="engine", timeout_s=0.05)
+
+    with pytest.raises(TimeoutError):
+        await probe.check()
+    with pytest.raises(TimeoutError):
+        await probe.check()  # joins the same ping instead of starting over
+    await asyncio.sleep(0.25)
+    await probe.check()  # the abandoned ping finished and warmed the pool
+
+    assert len(calls) == 2
+    await probe.close()
+
+
+async def test_database_errors_reach_the_health_check(monkeypatch):
+    async def broken_ping(engine):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(app_module, "ping", broken_ping)
+    probe = app_module.DatabaseProbe(engine="engine", timeout_s=1.0)
+    with pytest.raises(OSError):
+        await probe.check()
