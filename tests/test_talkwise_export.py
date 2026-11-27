@@ -2,7 +2,7 @@ import json
 
 import yaml
 
-from ea_llm.evals.talkwise_export import (
+from english_tutor.evals.talkwise_export import (
     SESSIONS_SQL,
     build_conversations,
     build_drafts,

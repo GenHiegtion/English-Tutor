@@ -1,4 +1,4 @@
-"""Build src/ea_llm/data/cefr_wordlist.yaml from the Open Language Profiles word lists.
+"""Build src/english_tutor/data/cefr_wordlist.yaml from the Open Language Profiles word lists.
 
 Sources (https://github.com/openlanguageprofiles/olp-en-cefrj):
   - CEFR-J Vocabulary Profile 1.5 (A1-B2), Tono Laboratory, TUFS: free for research and
@@ -27,7 +27,9 @@ import yaml
 
 BASE_URL = "https://raw.githubusercontent.com/openlanguageprofiles/olp-en-cefrj/master"
 FILES = ("cefrj-vocabulary-profile-1.5.csv", "octanove-vocabulary-profile-c1c2-1.0.csv")
-OUT = Path(__file__).resolve().parent.parent / "src" / "ea_llm" / "data" / "cefr_wordlist.yaml"
+OUT = (
+    Path(__file__).resolve().parent.parent / "src" / "english_tutor" / "data" / "cefr_wordlist.yaml"
+)
 LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
 TOKEN = re.compile(r"^[a-z]+(?:'[a-z]+)?$")
 

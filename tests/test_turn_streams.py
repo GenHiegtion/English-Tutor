@@ -3,10 +3,10 @@ import asyncio
 import pytest
 
 from conftest import make_service, turn_ctx
-from ea_llm.api.turns import TurnBusy, TurnStreams
-from ea_llm.providers.base import LLMRequest, TextDelta
-from ea_llm.teacher.events import OutputSegment
-from ea_llm.testing import FakeProvider
+from english_tutor.api.turns import TurnBusy, TurnStreams
+from english_tutor.providers.base import LLMRequest, TextDelta
+from english_tutor.teacher.events import OutputSegment
+from english_tutor.testing import FakeProvider
 
 
 class StallingProvider:

@@ -1,8 +1,8 @@
 import pytest
 
-from ea_llm.api.ratelimit import PRUNE_EVERY, SlidingWindowLimiter
-from ea_llm.api.settings import ApiSettings
-from ea_llm.config import ConfigError
+from english_tutor.api.ratelimit import PRUNE_EVERY, SlidingWindowLimiter
+from english_tutor.api.settings import ApiSettings
+from english_tutor.config import ConfigError
 
 KEY = "k" * 32
 OTHER_KEY = "o" * 32
@@ -13,13 +13,13 @@ def test_from_env_reads_every_setting():
     settings = ApiSettings.from_env(
         {
             "DATABASE_URL": "postgresql://u:p@h/db",
-            "EA_LLM_TALKWISE_API_KEY": KEY,
-            "EA_LLM_PIPECAT_API_KEY": " ",
-            "EA_LLM_TOKEN_SECRET": SECRET,
-            "EA_LLM_CORS_ORIGINS": "https://a.example/, https://b.example,,",
-            "EA_LLM_DOCS": "off",
-            "EA_LLM_TURNS_PER_MINUTE": "5",
-            "EA_LLM_SESSIONS_PER_HOUR": "7",
+            "ENGLISH_TUTOR_TALKWISE_API_KEY": KEY,
+            "ENGLISH_TUTOR_PIPECAT_API_KEY": " ",
+            "ENGLISH_TUTOR_TOKEN_SECRET": SECRET,
+            "ENGLISH_TUTOR_CORS_ORIGINS": "https://a.example/, https://b.example,,",
+            "ENGLISH_TUTOR_DOCS": "off",
+            "ENGLISH_TUTOR_TURNS_PER_MINUTE": "5",
+            "ENGLISH_TUTOR_SESSIONS_PER_HOUR": "7",
         }
     )
     assert settings.api_keys == {"talkwise": KEY}
@@ -44,8 +44,8 @@ def test_secrets_stay_out_of_repr():
 
 @pytest.mark.parametrize("value", ["zero", "0", "-3"])
 def test_bad_limits_are_rejected(value):
-    with pytest.raises(ConfigError, match="EA_LLM_TURNS_PER_MINUTE"):
-        ApiSettings.from_env({"EA_LLM_TURNS_PER_MINUTE": value})
+    with pytest.raises(ConfigError, match="ENGLISH_TUTOR_TURNS_PER_MINUTE"):
+        ApiSettings.from_env({"ENGLISH_TUTOR_TURNS_PER_MINUTE": value})
 
 
 @pytest.mark.parametrize(
@@ -55,11 +55,11 @@ def test_bad_limits_are_rejected(value):
         (ApiSettings(database_url="postgresql://h/db"), "no credential configured"),
         (
             ApiSettings(database_url="postgresql://h/db", api_keys={"talkwise": "short"}),
-            "EA_LLM_TALKWISE_API_KEY must have >= 32 chars",
+            "ENGLISH_TUTOR_TALKWISE_API_KEY must have >= 32 chars",
         ),
         (
             ApiSettings(database_url="postgresql://h/db", token_secret="short"),
-            "EA_LLM_TOKEN_SECRET must have >= 32 chars",
+            "ENGLISH_TUTOR_TOKEN_SECRET must have >= 32 chars",
         ),
         (
             ApiSettings(

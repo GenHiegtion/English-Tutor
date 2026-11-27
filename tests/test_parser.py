@@ -2,7 +2,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ea_llm.teacher.parser import LangTagParser, Segment
+from english_tutor.teacher.parser import LangTagParser, Segment
 
 
 def run(text: str, channel="text", chunks=None):

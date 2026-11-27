@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import insert, select, update
 
-from ea_llm.adapters.memory import load_seed_personas, load_seed_scenarios
-from ea_llm.adapters.sql import (
+from english_tutor.adapters.memory import load_seed_personas, load_seed_scenarios
+from english_tutor.adapters.sql import (
     METADATA,
     SqlHistoryStore,
     SqlLearnerStore,
@@ -21,10 +21,10 @@ from ea_llm.adapters.sql import (
     teacher_personas,
     users,
 )
-from ea_llm.models import TurnRecord
-from ea_llm.teacher.context import LearnerInput, TurnContext
-from ea_llm.teacher.runner import TeacherService
-from ea_llm.testing import FakeProvider, reply
+from english_tutor.models import TurnRecord
+from english_tutor.teacher.context import LearnerInput, TurnContext
+from english_tutor.teacher.runner import TeacherService
+from english_tutor.testing import FakeProvider, reply
 
 USER = uuid.UUID("3f2b8c1e-0000-4000-8000-000000000001")
 SUSPENDED = uuid.UUID("3f2b8c1e-0000-4000-8000-000000000002")

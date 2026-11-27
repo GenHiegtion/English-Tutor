@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from ea_llm.teacher.context import LearnerInput, LessonStepRef, ScenarioRef, TurnContext
+from english_tutor.teacher.context import LearnerInput, LessonStepRef, ScenarioRef, TurnContext
 
 SC = ScenarioRef(id="s", title="Cafe", level="A2", goal="Order", opener="Hi!", targets=["coffee"])
 STEP = LessonStepRef(

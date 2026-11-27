@@ -1,7 +1,7 @@
-# EA-LLM
+# English Tutor
 
 Teacher service of the Talkwise English-learning app. A Vietnamese-speaking teacher persona
-teaches English **in Vietnamese**. EA-LLM is the only AI core: a FastAPI service (deployed on
+teaches English **in Vietnamese**. English Tutor is the only AI core: a FastAPI service (deployed on
 Railway) that the Talkwise backend and browsers call for text chat, and the Pipecat voice bot
 calls for voice. Talkwise itself holds no AI code.
 
@@ -12,22 +12,22 @@ calls for voice. Talkwise itself holds no AI code.
 - **Models:** all calls go through [OpenRouter](https://openrouter.ai) with the Anthropic SDK
   (Haiku 5.5 primary, GPT-6 Luna as hedged fallback).
 - **Data:** the Talkwise Postgres database (Neon). Talkwise's Alembic migrations own the schema;
-  EA-LLM never creates or migrates tables.
+  English Tutor never creates or migrates tables.
 
 ## Quick start
 
 ```bash
-uv sync                         # install everything
-cp .env.example .env            # then set OPENROUTER_API_KEY
-uv run ea-llm chat              # scenario lesson in the terminal (default: cafe-order)
-uv run ea-llm chat --mode free_chat --interests football,music
-uv run ea-llm chat --list       # teachers and scenarios
-uv run ea-llm chat --offline    # no network, canned replies
-uv run ea-llm serve             # local server, docs at http://127.0.0.1:8000/docs
+uv sync                                # install everything
+cp .env.example .env                   # then set OPENROUTER_API_KEY
+uv run english-tutor chat              # scenario lesson in the terminal (default: cafe-order)
+uv run english-tutor chat --mode free_chat --interests football,music
+uv run english-tutor chat --list       # teachers and scenarios
+uv run english-tutor chat --offline    # no network, canned replies
+uv run english-tutor serve             # local server, docs at http://127.0.0.1:8000/docs
 ```
 
-`uv run ea-llm chat --help` lists every option (teacher, CEFR level, age band, name, ...).
-`ea-llm serve` uses in-memory stores and seed data and needs no credentials; it is for local
+`uv run english-tutor chat --help` lists every option (teacher, CEFR level, age band, name, ...).
+`english-tutor serve` uses in-memory stores and seed data and needs no credentials; it is for local
 development only (`--offline` also skips OpenRouter).
 
 ### Environment
@@ -35,19 +35,19 @@ development only (`--offline` also skips OpenRouter).
 | Variable | Required | Meaning |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | yes, except `--offline` | OpenRouter key for every LLM call |
-| `EA_LLM_<ROLE>_MODEL` | no | override the primary model of a role (`TEACHER`, `EXAMINER`, `REPORTER`, `WRITER`) |
-| `EA_LLM_<ROLE>_FALLBACK_MODEL` | no | override the hedged fallback; `none` disables it |
-| `EA_LLM_LOG_LEVEL` | no | level of the `ea_llm` loggers (CLI default `WARNING`, service `INFO`) |
+| `ENGLISH_TUTOR_<ROLE>_MODEL` | no | override the primary model of a role (`TEACHER`, `EXAMINER`, `REPORTER`, `WRITER`) |
+| `ENGLISH_TUTOR_<ROLE>_FALLBACK_MODEL` | no | override the hedged fallback; `none` disables it |
+| `ENGLISH_TUTOR_LOG_LEVEL` | no | level of the `english_tutor` loggers (CLI default `WARNING`, service `INFO`) |
 | `DATABASE_URL` | service, eval export | Talkwise Postgres URL (see "Database role" below) |
-| `EA_LLM_TALKWISE_API_KEY` | service, one credential at least | key of the Talkwise backend |
-| `EA_LLM_PIPECAT_API_KEY` | service, one credential at least | key of the voice bot |
-| `EA_LLM_TOKEN_SECRET` | service, one credential at least | HS256 secret shared with Talkwise for learner tokens |
-| `EA_LLM_CORS_ORIGINS` | no | comma-separated web origins allowed to call the service |
-| `EA_LLM_DOCS` | no | `off` hides `/docs` and `/openapi.json` |
-| `EA_LLM_TURNS_PER_MINUTE` / `EA_LLM_SESSIONS_PER_HOUR` | no | per-learner limits (20 / 30) |
+| `ENGLISH_TUTOR_TALKWISE_API_KEY` | service, one credential at least | key of the Talkwise backend |
+| `ENGLISH_TUTOR_PIPECAT_API_KEY` | service, one credential at least | key of the voice bot |
+| `ENGLISH_TUTOR_TOKEN_SECRET` | service, one credential at least | HS256 secret shared with Talkwise for learner tokens |
+| `ENGLISH_TUTOR_CORS_ORIGINS` | no | comma-separated web origins allowed to call the service |
+| `ENGLISH_TUTOR_DOCS` | no | `off` hides `/docs` and `/openapi.json` |
+| `ENGLISH_TUTOR_TURNS_PER_MINUTE` / `ENGLISH_TUTOR_SESSIONS_PER_HOUR` | no | per-learner limits (20 / 30) |
 
 Model ids are OpenRouter ids (`vendor/model`); unset or empty keeps the defaults in
-`src/ea_llm/config.py`. Token limits, effort and timeouts stay in code because they are tuned
+`src/english_tutor/config.py`. Token limits, effort and timeouts stay in code because they are tuned
 with the prompts. API keys and the token secret need at least 32 characters
 (`openssl rand -hex 32`), and each caller gets its own key. `.env` is loaded when present;
 on Railway the variables come from the service settings.
@@ -76,7 +76,7 @@ The OpenAPI docs at `/docs` (and `/openapi.json`) are the contract for both call
 **Authentication.** Backend services send `X-API-Key` and name the `user_id` themselves; they
 may also override profile fields for a session (`learner`). Browsers send
 `Authorization: Bearer <token>`: an HS256 JWT minted by the Talkwise backend with
-`EA_LLM_TOKEN_SECRET`, claims `sub` (user id), `aud` = `ea-llm`, `iat`, `exp` (at most one hour
+`ENGLISH_TUTOR_TOKEN_SECRET`, claims `sub` (user id), `aud` = `english-tutor`, `iat`, `exp` (at most one hour
 after `iat`) and optionally `sid` (limits the token to one session). A learner only reaches
 their own sessions; other ids answer 404.
 
@@ -91,7 +91,7 @@ errors add `details` with field locations, never the rejected input).
 
 ### Deploying on Railway
 
-`railway.json` sets the start command (`python -m ea_llm.api`, listening on `$PORT`), the
+`railway.json` sets the start command (`python -m english_tutor.api`, listening on `$PORT`), the
 `/health` check and **one replica**: turn locks, `delivered` positions and rate limits live in
 the process. Set the service variables above, then generate a domain; the docs are at
 `https://<name>.up.railway.app/docs`. Logs are JSON lines on stdout, one access line per
@@ -107,7 +107,7 @@ psycopg runs without server-side prepared statements.
 ```bash
 uv run python scripts/check_db.py                 # read-only: role, columns, rights, teachers
 uv run python scripts/seed_personas.py            # dry run: what would change in teacher_personas
-uv run python scripts/seed_personas.py --apply    # copy src/ea_llm/data/personas.yaml into it
+uv run python scripts/seed_personas.py --apply    # copy src/english_tutor/data/personas.yaml into it
 ```
 
 `check_db.py` exits with 1 when the service could not run on that database (a missing column or
@@ -121,17 +121,25 @@ The HTTP layer is a thin shell around `TeacherService`, which stays free of web 
 code so tests need no network:
 
 ```python
-from ea_llm.providers.openrouter_provider import OpenRouterProvider
-from ea_llm.teacher.runner import TeacherService
+from english_tutor.providers.openrouter_provider import OpenRouterProvider
+from english_tutor.teacher.runner import TeacherService
 
 service = TeacherService(
     primary=OpenRouterProvider(),
     fallback=OpenRouterProvider().with_model("openai/gpt-6-luna"),
-    history=..., personas=..., learners=...,        # port implementations (see below)
+    history=...,
+    personas=...,
+    learners=...,  # port implementations (see below)
 )
-await service.open_session(session_id=..., user_id=..., channel="text", mode="scenario",
-                           persona_id="lan", scenario=scenario)
-async for event in service.run_turn(turn_context):   # OutputSegment, BoardUpdate, ...
+await service.open_session(
+    session_id=...,
+    user_id=...,
+    channel="text",
+    mode="scenario",
+    persona_id="lan",
+    scenario=scenario,
+)
+async for event in service.run_turn(turn_context):  # OutputSegment, BoardUpdate, ...
     ...
 ```
 
@@ -142,9 +150,9 @@ kept in the history.
 
 ### Ports
 
-The core reads and writes data only through `ea_llm.ports` (`HistoryStore`, `PersonaStore`,
-`LearnerStore`, `ScenarioStore`). `ea_llm.adapters.sql` implements them on the Talkwise database
-(SQLAlchemy async, psycopg 3); `ea_llm.adapters.memory` implements them in memory for the CLI,
+The core reads and writes data only through `english_tutor.ports` (`HistoryStore`, `PersonaStore`,
+`LearnerStore`, `ScenarioStore`). `english_tutor.adapters.sql` implements them on the Talkwise database
+(SQLAlchemy async, psycopg 3); `english_tutor.adapters.memory` implements them in memory for the CLI,
 the local server, evals and tests. Rules for every implementation:
 
 1. All methods are `async`; run blocking drivers in a thread.
@@ -158,16 +166,16 @@ model on OpenRouter, no fallback) and grade the replies in two layers:
 
 1. **Rule checks** (free, deterministic): clean output, pronouns, the question the learner saw,
    required corrections, no correction of correct sentences, Vietnamese share, length, forbidden
-   phrases. Defined per case in `src/ea_llm/evals/cases/teacher/*.yaml`.
+   phrases. Defined per case in `src/english_tutor/evals/cases/teacher/*.yaml`.
 2. **LLM judge** (rubric 1-5): `run` writes `judge_prompt.md`, a self-contained file with fixed
-   instructions (`src/ea_llm/evals/judge_instructions.md`) and every case. Any capable model reads
+   instructions (`src/english_tutor/evals/judge_instructions.md`) and every case. Any capable model reads
    it and writes `judge_scores.jsonl` next to it; `report` validates and merges the scores.
 
 ```bash
-uv run python -m ea_llm.evals.run_eval run                       # 50 cases, about $0.02
-uv run python -m ea_llm.evals.run_eval run --filter fc-          # a subset
+uv run python -m english_tutor.evals.run_eval run                       # 50 cases, about $0.02
+uv run python -m english_tutor.evals.run_eval run --filter fc-          # a subset
 # let a judge write eval_runs/<run>/judge_scores.jsonl, then:
-uv run python -m ea_llm.evals.run_eval report eval_runs/<run> --baseline eval_runs/<older run>
+uv run python -m english_tutor.evals.run_eval report eval_runs/<run> --baseline eval_runs/<older run>
 ```
 
 Runs land in `eval_runs/` (gitignored). `report` re-applies the current rule checks, so an older
@@ -178,7 +186,7 @@ New cases can be drafted from real Talkwise sessions with a read-only export (re
 `DATABASE_URL`, sends only SELECTs):
 
 ```bash
-uv run python -m ea_llm.evals.talkwise_export --limit 200
+uv run python -m english_tutor.evals.talkwise_export --limit 200
 ```
 
 It writes `exports/<time>/` (gitignored): masked conversations, the public scenarios and one draft
@@ -191,7 +199,7 @@ cases until someone writes their `expect` block and moves them into `evals/cases
 ## Layout
 
 ```
-src/ea_llm/
+src/english_tutor/
   providers/      LLM contracts (base.py) and the OpenRouter adapter
   prompts/        versioned prompt templates, registry (prompt_version) and builder
   teacher/        parser, tools, guards, history, hedged streaming, runner, personas

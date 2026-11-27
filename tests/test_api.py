@@ -6,18 +6,18 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-import ea_llm.api.app as app_module
-from ea_llm.adapters.memory import (
+import english_tutor.api.app as app_module
+from english_tutor.adapters.memory import (
     MemoryHistoryStore,
     MemoryLearnerStore,
     MemoryPersonaStore,
     MemoryScenarioStore,
 )
-from ea_llm.api.app import create_app, dev_app
-from ea_llm.api.settings import ApiSettings
-from ea_llm.models import LearnerProfile
-from ea_llm.teacher.runner import TeacherService
-from ea_llm.testing import FakeProvider, reply
+from english_tutor.api.app import create_app, dev_app
+from english_tutor.api.settings import ApiSettings
+from english_tutor.models import LearnerProfile
+from english_tutor.teacher.runner import TeacherService
+from english_tutor.testing import FakeProvider, reply
 
 TALKWISE_KEY = "k" * 40
 PIPECAT_KEY = "p" * 40
@@ -56,7 +56,7 @@ def client():
 
 def token(user_id=LEARNER, *, lifetime=600, secret=SECRET, **claims):
     now = int(time.time())
-    payload = {"sub": user_id, "aud": "ea-llm", "iat": now, "exp": now + lifetime, **claims}
+    payload = {"sub": user_id, "aud": "english-tutor", "iat": now, "exp": now + lifetime, **claims}
     return {"Authorization": f"Bearer {jwt.encode(payload, secret, algorithm='HS256')}"}
 
 

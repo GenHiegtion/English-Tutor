@@ -1,14 +1,14 @@
 import json
 
-from ea_llm.models import Address, LearnerProfile, SessionSnapshot, StoredMessage
-from ea_llm.providers.base import Message, TextPart, ToolResultPart, ToolUsePart
-from ea_llm.teacher.history import (
+from english_tutor.models import Address, LearnerProfile, SessionSnapshot, StoredMessage
+from english_tutor.providers.base import Message, TextPart, ToolResultPart, ToolUsePart
+from english_tutor.teacher.history import (
     advance_window,
     pending_tool_results,
     render_segments,
     to_messages,
 )
-from ea_llm.teacher.parser import Segment
+from english_tutor.teacher.parser import Segment
 
 
 def snap():
