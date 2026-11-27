@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from ea_llm.adapters.memory import MemoryHistoryStore, MemoryLearnerStore, MemoryPersonaStore
 from ea_llm.config import ConfigError, load_routes
+from ea_llm.ports import HistoryStore, LearnerStore, PersonaStore
 from ea_llm.providers.base import LLMEvent, LLMProvider, LLMRequest
 from ea_llm.providers.openrouter_provider import API_KEY_ENV, OpenRouterProvider
 from ea_llm.teacher.runner import TeacherService
@@ -37,9 +38,14 @@ def configure_logging() -> None:
 def build_service(
     *,
     offline: bool = False,
-    learners: MemoryLearnerStore | None = None,
+    learners: LearnerStore | None = None,
+    history: HistoryStore | None = None,
+    personas: PersonaStore | None = None,
 ) -> TeacherService:
-    """Service backed by in-memory stores. ``offline`` swaps OpenRouter for a canned provider."""
+    """TeacherService over the given stores (in-memory by default).
+
+    ``offline`` swaps OpenRouter for a canned provider.
+    """
     load_dotenv()
     primary: LLMProvider
     fallback: LLMProvider | None
@@ -57,8 +63,8 @@ def build_service(
     return TeacherService(
         primary=primary,
         fallback=fallback,
-        history=MemoryHistoryStore(),
-        personas=MemoryPersonaStore.from_seed(),
+        history=history or MemoryHistoryStore(),
+        personas=personas or MemoryPersonaStore.from_seed(),
         learners=learners or MemoryLearnerStore(),
     )
 

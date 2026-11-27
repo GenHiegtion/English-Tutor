@@ -1,4 +1,4 @@
-"""Outbound ports. The module never imports a database driver or web framework.
+"""Outbound ports. The teacher core never imports a database driver or web framework.
 
 Rules for every implementation (see README):
   1. All methods are async; blocking drivers must run in a thread.
@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from ea_llm.models import LearnerProfile, Persona, SessionSnapshot, StoredMessage, TurnRecord
+from ea_llm.teacher.context import ScenarioRef
 
 
 class HistoryStore(Protocol):
@@ -24,6 +25,12 @@ class HistoryStore(Protocol):
     async def append_turn(self, session_id: str, turn: TurnRecord) -> None:
         """Atomically store the turn's messages and usage. No-op if ``turn.turn_id`` exists."""
 
+    async def close_session(self, session_id: str) -> bool:
+        """Mark the session as ended (idempotent). False if the session does not exist."""
+
+    async def is_closed(self, session_id: str) -> bool:
+        """True once ``close_session`` ran for this session."""
+
 
 class PersonaStore(Protocol):
     async def list_personas(self) -> list[Persona]:
@@ -34,3 +41,11 @@ class PersonaStore(Protocol):
 
 class LearnerStore(Protocol):
     async def get_profile(self, user_id: str) -> LearnerProfile | None: ...
+
+
+class ScenarioStore(Protocol):
+    async def list_scenarios(self) -> list[ScenarioRef]:
+        """Active scenarios only."""
+
+    async def get_scenario(self, scenario_id: str) -> ScenarioRef | None:
+        """An active scenario, or None."""

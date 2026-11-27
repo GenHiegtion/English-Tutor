@@ -140,13 +140,19 @@ class TeacherService:
         mode: Mode,
         persona_id: str,
         scenario: ScenarioRef | None = None,
+        learner: LearnerProfile | None = None,
     ) -> SessionSnapshot:
+        """Freeze persona, learner profile and prompt version into a new session.
+
+        ``learner`` replaces the profile from the LearnerStore (callers that already hold it).
+        """
         if (mode == "scenario") != (scenario is not None):
             raise ValueError("scenario is required for (and only for) mode 'scenario'")
         if mode == "lesson":
             raise NotImplementedError("lesson mode is not implemented yet")
         persona = await self._require_persona(persona_id)
-        learner = await self.learners.get_profile(user_id) or LearnerProfile(user_id=user_id)
+        if learner is None:
+            learner = await self.learners.get_profile(user_id) or LearnerProfile(user_id=user_id)
         snapshot = SessionSnapshot(
             session_id=session_id,
             user_id=user_id,

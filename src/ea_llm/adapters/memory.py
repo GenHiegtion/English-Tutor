@@ -14,10 +14,13 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 class MemoryHistoryStore:
+    """HistoryStore kept in process memory."""
+
     def __init__(self) -> None:
         self.sessions: dict[str, SessionSnapshot] = {}
         self.messages: dict[str, list[StoredMessage]] = {}
         self.turns: dict[str, TurnRecord] = {}  # turn_id -> record (idempotency + usage log)
+        self.closed: set[str] = set()
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
         self.sessions[snapshot.session_id] = snapshot.model_copy(deep=True)
@@ -36,8 +39,19 @@ class MemoryHistoryStore:
         self.turns[turn.turn_id] = turn.model_copy(deep=True)
         self.messages.setdefault(session_id, []).extend(copy.deepcopy(turn.messages))
 
+    async def close_session(self, session_id: str) -> bool:
+        if session_id not in self.sessions:
+            return False
+        self.closed.add(session_id)
+        return True
+
+    async def is_closed(self, session_id: str) -> bool:
+        return session_id in self.closed
+
 
 class MemoryPersonaStore:
+    """PersonaStore over a fixed list (the seed personas by default)."""
+
     def __init__(self, personas: list[Persona]) -> None:
         self._by_id = {p.id: p for p in personas}
 
@@ -53,6 +67,8 @@ class MemoryPersonaStore:
 
 
 class MemoryLearnerStore:
+    """LearnerStore kept in process memory."""
+
     def __init__(self, profiles: list[LearnerProfile] | None = None) -> None:
         self._by_id = {p.user_id: p for p in profiles or []}
 
@@ -61,6 +77,23 @@ class MemoryLearnerStore:
 
     def put(self, profile: LearnerProfile) -> None:
         self._by_id[profile.user_id] = profile
+
+
+class MemoryScenarioStore:
+    """ScenarioStore over a fixed list (the seed scenarios by default)."""
+
+    def __init__(self, scenarios: list[ScenarioRef]) -> None:
+        self._by_id = {s.id: s for s in scenarios}
+
+    @classmethod
+    def from_seed(cls) -> MemoryScenarioStore:
+        return cls(load_seed_scenarios())
+
+    async def list_scenarios(self) -> list[ScenarioRef]:
+        return list(self._by_id.values())
+
+    async def get_scenario(self, scenario_id: str) -> ScenarioRef | None:
+        return self._by_id.get(scenario_id)
 
 
 def load_seed_personas() -> list[Persona]:

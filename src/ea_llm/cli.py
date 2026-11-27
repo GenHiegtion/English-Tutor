@@ -179,16 +179,11 @@ def _show(event: TeacherEvent) -> None:
 
 
 def _serve(args: argparse.Namespace) -> int:
-    try:
-        import uvicorn
-    except ImportError:
-        print("Install the server extra: uv sync --extra server", file=sys.stderr)
-        return 1
-    from ea_llm.devserver import create_app
+    import uvicorn
 
-    learners = MemoryLearnerStore()
-    app = create_app(build_service(offline=args.offline, learners=learners), learners)
-    uvicorn.run(app, host=args.host, port=args.port)
+    from ea_llm.api.app import dev_app
+
+    uvicorn.run(dev_app(offline=args.offline), host=args.host, port=args.port)
     return 0
 
 
