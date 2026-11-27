@@ -4,7 +4,9 @@ Each turn runs in its own asyncio task and the response only reads its events fr
 When the client disconnects (barge-in, closed tab), the server cancels the response; the turn
 task is then cancelled separately, outside the request's cancel scope, so the runner can still
 await its database write of the cancelled turn (only the segments reported as delivered are
-kept). All state here lives in this process: the service must run as a single instance.
+kept). A turn whose ``turn_end`` was sent is complete and is never cancelled: the runner writes
+it after ``turn_end``, so clients may stop reading there, and the session stays locked until the
+write is done. All state here lives in this process: the service must run as a single instance.
 """
 
 from __future__ import annotations
@@ -101,12 +103,14 @@ class TurnStreams:
     async def _consume(
         queue: asyncio.Queue[TeacherEvent | None], task: asyncio.Task[None]
     ) -> AsyncGenerator[TeacherEvent]:
+        ended = False  # turn_end went out: the turn is complete, only its database write is left
         try:
             while (event := await queue.get()) is not None:
-                yield event
+                ended = ended or event.kind == "turn_end"  # set before yielding: the client
+                yield event  # may leave as soon as it has turn_end
         finally:
-            if not task.done():
-                task.cancel()  # the client left: the runner stores the cancelled turn
+            if not ended and not task.done():
+                task.cancel()  # the client left mid-turn: the runner stores the cancelled turn
 
     def _leave(self, session_id: str, entry: _SessionLock) -> None:
         entry.users -= 1

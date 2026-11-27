@@ -6,7 +6,7 @@ from conftest import make_service, turn_ctx
 from english_tutor.api.turns import TurnBusy, TurnStreams
 from english_tutor.providers.base import LLMRequest, TextDelta
 from english_tutor.teacher.events import OutputSegment
-from english_tutor.testing import FakeProvider
+from english_tutor.testing import FakeProvider, reply
 
 
 class StallingProvider:
@@ -123,3 +123,74 @@ async def test_unexpected_error_ends_the_stream_with_internal_error(stores):
     assert events[-1].kind == "turn_failed"
     assert events[-1].reason == "internal_error"
     assert streams._locks == {}
+
+
+class SlowHistory:
+    """A history store whose turn writes wait until the test lets them through."""
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+        self.release = asyncio.Event()
+        self.writing = asyncio.Event()
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def append_turn(self, session_id, turn):
+        self.writing.set()
+        await self.release.wait()
+        await self._inner.append_turn(session_id, turn)
+
+
+async def test_turn_end_comes_before_the_write_and_leaving_then_keeps_the_turn(stores):
+    history, personas, learners = stores
+    slow = SlowHistory(history)
+    service = make_service((slow, personas, learners), FakeProvider([reply("<vi>Chào bạn.</vi>")]))
+    await open_free_chat(service)
+    streams = TurnStreams(service, lock_wait_s=5.0)
+
+    events = await streams.start(turn_ctx("t1", "hello", mode="free_chat"))
+    async for event in events:
+        if event.kind == "turn_end":
+            break
+    assert await history.load_messages("s1") == []  # turn_end did not wait for the write
+    await events.aclose()  # the page stops reading at turn_end
+
+    await slow.writing.wait()
+    assert streams.is_running("s1", "t1")  # still writing: not cancelled
+    slow.release.set()
+    await streams.shutdown()
+
+    stored = await history.load_messages("s1")
+    assert [m.message.role for m in stored] == ["user", "assistant"]
+    assert "cancelled" not in stored[-1].guard_flags
+    assert streams._locks == {}
+
+
+async def test_next_turn_waits_for_the_previous_write(stores):
+    history, personas, learners = stores
+    slow = SlowHistory(history)
+    provider = FakeProvider([reply("<vi>Một.</vi>"), reply("<vi>Hai.</vi>")])
+    service = make_service((slow, personas, learners), provider)
+    await open_free_chat(service)
+    streams = TurnStreams(service, lock_wait_s=5.0)
+
+    stream = await streams.start(turn_ctx("t1", "a", mode="free_chat"))
+    first = [e async for e in _until_end(stream)]
+    assert first[-1].kind == "turn_end"
+    second = asyncio.create_task(streams.start(turn_ctx("t2", "b", mode="free_chat")))
+    await asyncio.sleep(0.05)
+    assert not second.done()  # t1 is still being written
+    slow.release.set()
+    events = [e async for e in await second]
+    assert events[-1].kind == "turn_end"
+    await streams.shutdown()
+    assert [m.turn_id for m in await history.load_messages("s1")] == ["t1", "t1", "t2", "t2"]
+
+
+async def _until_end(events):
+    async for event in events:
+        yield event
+        if event.kind == "turn_end":
+            await events.aclose()
+            return
