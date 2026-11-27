@@ -25,7 +25,7 @@ TABLE = seed_personas.TEACHER_PERSONAS
 
 @pytest.fixture
 async def engine(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'talkwise.db'}")
+    engine = create_engine(f"sqlite:///{tmp_path / 'app.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(TABLE.metadata.create_all)
     yield engine

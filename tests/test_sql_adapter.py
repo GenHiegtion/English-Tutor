@@ -34,7 +34,7 @@ NOW = datetime(2026, 11, 27, 9, 0, tzinfo=UTC)
 
 @pytest.fixture
 async def engine(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'talkwise.db'}")
+    engine = create_engine(f"sqlite:///{tmp_path / 'app.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(METADATA.create_all)
         await conn.execute(
@@ -142,7 +142,7 @@ async def test_learner_profile_comes_from_users(stores):
     assert await learners.get_profile("not-a-uuid") is None
 
 
-async def test_catalogs_come_from_talkwise_tables(engine):
+async def test_catalogs_come_from_app_tables(engine):
     personas = SqlPersonaStore(engine)
     assert {p.id for p in await personas.list_personas()} == {"lan", "minh", "hung", "chi"}
     scenario_store = SqlScenarioStore(engine)
@@ -180,7 +180,7 @@ async def test_catalog_is_cached_until_ttl(engine):
     assert await SqlPersonaStore(engine, ttl_s=0).get_persona("lan") is None
 
 
-async def test_full_turn_is_stored_in_talkwise_tables(engine, stores):
+async def test_full_turn_is_stored_in_app_tables(engine, stores):
     scenario = await SqlScenarioStore(engine).get_scenario("cafe-order")
     service = service_for(stores, reply("<vi>Chào bác.</vi><en>What would you like?</en>"))
     snapshot = await service.open_session(

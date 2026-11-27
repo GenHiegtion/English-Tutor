@@ -48,7 +48,7 @@ class LessonStepRef(BaseModel):
     opener_terminal: OpenerTerminal | None = None
 
 
-class ScenarioRef(BaseModel):  # matches Talkwise's scenarios table
+class ScenarioRef(BaseModel):  # matches the app's scenarios table
     id: str
     title: str
     level: str

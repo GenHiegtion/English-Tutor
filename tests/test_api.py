@@ -19,12 +19,12 @@ from english_tutor.models import LearnerProfile
 from english_tutor.teacher.runner import TeacherService
 from english_tutor.testing import FakeProvider, reply
 
-TALKWISE_KEY = "k" * 40
+BACKEND_KEY = "k" * 40
 PIPECAT_KEY = "p" * 40
 SECRET = "s" * 40
 LEARNER = "3f2b8c1e-0000-4000-8000-000000000001"
 OTHER_LEARNER = "3f2b8c1e-0000-4000-8000-000000000002"
-SERVICE = {"X-API-Key": TALKWISE_KEY}
+SERVICE = {"X-API-Key": BACKEND_KEY}
 CAFE = {"persona_id": "lan", "scenario_id": "cafe-order"}
 
 
@@ -36,7 +36,7 @@ def make_app(*, learners=None, require_known_learner=False, **settings):
         learners=learners or MemoryLearnerStore(),
     )
     config = ApiSettings(
-        api_keys={"talkwise": TALKWISE_KEY, "pipecat": PIPECAT_KEY},
+        api_keys={"backend": BACKEND_KEY, "pipecat": PIPECAT_KEY},
         token_secret=SECRET,
         **settings,
     )
@@ -305,17 +305,17 @@ def test_unknown_user_is_rejected_when_learners_must_exist():
 
 
 def test_cors_preflight_for_configured_origin():
-    with TestClient(make_app(cors_origins=["https://talkwise.example"])) as client:
+    with TestClient(make_app(cors_origins=["https://web.example"])) as client:
         response = client.options(
             "/sessions",
             headers={
-                "Origin": "https://talkwise.example",
+                "Origin": "https://web.example",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "authorization,content-type",
             },
         )
         assert response.status_code == 200
-        assert response.headers["access-control-allow-origin"] == "https://talkwise.example"
+        assert response.headers["access-control-allow-origin"] == "https://web.example"
 
 
 def test_unknown_route_uses_the_error_shape(client):

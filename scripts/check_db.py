@@ -82,7 +82,7 @@ async def check_role(conn: AsyncConnection, report: Report) -> None:
     )
     if owned:
         report.warn(
-            f"role owns {owned} of the Talkwise tables (owner role): it may alter or drop them; "
+            f"role owns {owned} of the app tables (owner role): it may alter or drop them; "
             "create a limited role for the service"
         )
 

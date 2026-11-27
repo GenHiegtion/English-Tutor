@@ -1,4 +1,4 @@
-"""English Tutor HTTP service: the contract for the Talkwise backend, browsers and Pipecat.
+"""English Tutor HTTP service: the contract for the app backend, browsers and Pipecat.
 
 Production (Railway): ``uvicorn --factory english_tutor.api.app:production_app``. Local development:
 ``uv run english-tutor serve`` (in-memory stores, no authentication).
@@ -67,10 +67,10 @@ MINUTE_S = 60.0
 HOUR_S = 3600.0
 
 DESCRIPTION = """
-Teacher service of Talkwise: text in, text out (audio stays in the voice bot).
+AI English teacher service: text in, text out (audio stays in the voice bot).
 
 **Authentication.** Backend services send `X-API-Key`. A learner's browser sends
-`Authorization: Bearer <token>`, a short-lived HS256 JWT minted by the Talkwise backend
+`Authorization: Bearer <token>`, a short-lived HS256 JWT minted by the app backend
 (claims `sub` = user id, `aud` = `english-tutor`, `iat`, `exp`, optional `sid` = the only
 session the token may use). A learner can only reach their own sessions.
 
@@ -85,9 +85,9 @@ is kept in the history.
 """
 
 api_key_scheme = APIKeyHeader(
-    name=API_KEY_HEADER, auto_error=False, description="Backend services (Talkwise, Pipecat)."
+    name=API_KEY_HEADER, auto_error=False, description="Backend services (app backend, Pipecat)."
 )
-bearer_scheme = HTTPBearer(auto_error=False, description="Learner token minted by Talkwise.")
+bearer_scheme = HTTPBearer(auto_error=False, description="Learner token minted by the app backend.")
 
 
 @dataclass
@@ -102,7 +102,7 @@ class ServiceState:
     turn_limits: SlidingWindowLimiter
     session_limits: SlidingWindowLimiter
     database: DatabaseProbe | None
-    require_known_learner: bool  # with the Talkwise database a session needs a real user row
+    require_known_learner: bool  # with the app database a session needs a real user row
 
 
 class DatabaseProbe:
@@ -374,7 +374,7 @@ def create_app(
 
 
 def production_app() -> FastAPI:
-    """Entry point for ``uvicorn --factory``: Talkwise database, real models, authentication."""
+    """Entry point for ``uvicorn --factory``: app database, real models, authentication."""
     load_dotenv()
     configure_service_logging()
     settings = ApiSettings.from_env()

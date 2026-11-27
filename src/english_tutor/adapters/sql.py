@@ -1,6 +1,6 @@
-"""Postgres (Neon) implementations of the ports, on the Talkwise database schema.
+"""Postgres (Neon) implementations of the ports, on the app database schema.
 
-Talkwise's Alembic migrations own every table here (migration ``0030`` added the English Tutor
+The app's Alembic migrations own every table here (migration ``0030`` added the English Tutor
 columns); this module never creates or migrates them. ``METADATA`` mirrors only the columns
 read or written below, so tests can create the tables on SQLite. Keep it in sync with
 ``api/app/models.py`` of English-Teacher.
@@ -179,7 +179,7 @@ def async_database_url(url: str) -> str:
 
 
 def create_engine(url: str) -> AsyncEngine:
-    """Async engine for the Talkwise database (works with Neon's pooled endpoint)."""
+    """Async engine for the app database (works with Neon's pooled endpoint)."""
     url = async_database_url(url)
     if not url.startswith("postgresql+psycopg://"):
         return create_async_engine(url)
@@ -202,7 +202,7 @@ async def ping(engine: AsyncEngine) -> None:
 
 
 def parse_uuid(value: str) -> uuid.UUID | None:
-    """UUID of a Talkwise id, or None when ``value`` is not one (an unknown id)."""
+    """UUID of an app id, or None when ``value`` is not one (an unknown id)."""
     try:
         return uuid.UUID(value)
     except (ValueError, AttributeError, TypeError):
@@ -218,7 +218,7 @@ def _clip(value: str, limit: int) -> str:
 
 
 class SqlHistoryStore:
-    """Sessions, messages and usage rows in the Talkwise ``sessions``/``messages`` tables."""
+    """Sessions, messages and usage rows in the app's ``sessions``/``messages`` tables."""
 
     def __init__(self, engine: AsyncEngine, clock: Callable[[], datetime] = _now) -> None:
         self._engine = engine
@@ -353,7 +353,7 @@ class SqlHistoryStore:
 
 
 class SqlLearnerStore:
-    """Learner profiles from the Talkwise ``users`` table."""
+    """Learner profiles from the app's ``users`` table."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -402,7 +402,7 @@ class _Catalog[T]:
 
 
 class SqlPersonaStore:
-    """Teachers from the Talkwise ``teacher_personas`` table, cached for ``ttl_s``."""
+    """Teachers from the app's ``teacher_personas`` table, cached for ``ttl_s``."""
 
     def __init__(self, engine: AsyncEngine, ttl_s: float = CATALOG_TTL_S) -> None:
         self._engine = engine
@@ -429,7 +429,7 @@ class SqlPersonaStore:
                     address=row.address,
                     switch_greeting=row.switch_greeting,
                     fillers=row.fillers or {},
-                    # Talkwise also has "review": anything not published is offered to no one.
+                    # The app also has "review": anything not published is offered to no one.
                     status="published" if row.status == "published" else "draft",
                 )
             except ValidationError:
@@ -438,7 +438,7 @@ class SqlPersonaStore:
 
 
 class SqlScenarioStore:
-    """Active role-play scenarios from the Talkwise ``scenarios`` table, cached for ``ttl_s``."""
+    """Active role-play scenarios from the app's ``scenarios`` table, cached for ``ttl_s``."""
 
     def __init__(self, engine: AsyncEngine, ttl_s: float = CATALOG_TTL_S) -> None:
         self._engine = engine
@@ -478,7 +478,7 @@ class SqlScenarioStore:
 def _require_uuid(value: str, field: str) -> uuid.UUID:
     parsed = parse_uuid(value)
     if parsed is None:
-        raise ValueError(f"{field} must be a UUID for the Talkwise database")
+        raise ValueError(f"{field} must be a UUID for the app database")
     return parsed
 
 

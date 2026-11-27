@@ -38,7 +38,7 @@ class CreateSession(BaseModel):
     user_id: str | None = Field(
         default=None,
         max_length=64,
-        description="Talkwise user id. Required with an API key; taken from the token otherwise.",
+        description="User id in the app. Required with an API key; taken from the token otherwise.",
     )
     persona_id: str = Field(pattern=ID_PATTERN, examples=["lan"])
     mode: Literal["scenario", "free_chat"] = "scenario"

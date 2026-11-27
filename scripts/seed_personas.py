@@ -1,4 +1,4 @@
-"""Copy the teachers in src/english_tutor/data/personas.yaml into Talkwise's teacher_personas table.
+"""Copy the teachers in src/english_tutor/data/personas.yaml into the app's teacher_personas table.
 
 The YAML file is the source of the teachers' content; the table is what the service reads.
 New teachers are inserted, changed ones updated (version + 1), identical ones left alone.
@@ -7,7 +7,7 @@ Columns the YAML does not have (voice, avatar_key) are never touched.
 Run:  uv run python scripts/seed_personas.py            # dry run: print the plan, write nothing
       uv run python scripts/seed_personas.py --apply    # write, in one transaction
 The URL comes from $DATABASE_URL (or --url-env NAME). The service's own role should not be able
-to write this table, so --apply usually needs the Talkwise owner URL.
+to write this table, so --apply usually needs the app's owner URL.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ CONTENT_FIELDS = (
     "status",
 )
 
-# Every column the seed writes, as created by Talkwise migration 0030.
+# Every column the seed writes, as created by app migration 0030.
 _METADATA = MetaData()
 TEACHER_PERSONAS = Table(
     "teacher_personas",
