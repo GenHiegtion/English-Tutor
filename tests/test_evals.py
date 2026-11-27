@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from ea_llm.evals.cases import EvalCase, load_cases
-from ea_llm.evals.judges import (
+from english_tutor.evals.cases import EvalCase, load_cases
+from english_tutor.evals.judges import (
     CaseResult,
     CheckOutcome,
     JudgeScore,
@@ -12,7 +12,7 @@ from ea_llm.evals.judges import (
     check_case,
     load_judge_scores,
 )
-from ea_llm.evals.run_eval import (
+from english_tutor.evals.run_eval import (
     JUDGE_PROMPT,
     JUDGE_SCORES,
     RESULTS,
@@ -22,7 +22,7 @@ from ea_llm.evals.run_eval import (
     run_cases,
     write_run,
 )
-from ea_llm.testing import FakeProvider, reply
+from english_tutor.testing import FakeProvider, reply
 
 MISTAKE = (
     "record_mistake",

@@ -1,14 +1,14 @@
 import pytest
 
-from ea_llm.adapters.memory import (
+from english_tutor.adapters.memory import (
     MemoryHistoryStore,
     MemoryLearnerStore,
     MemoryPersonaStore,
     load_seed_scenarios,
 )
-from ea_llm.models import LearnerProfile
-from ea_llm.teacher.context import LearnerInput, ScenarioRef, TurnContext
-from ea_llm.teacher.runner import TeacherConfig, TeacherService
+from english_tutor.models import LearnerProfile
+from english_tutor.teacher.context import LearnerInput, ScenarioRef, TurnContext
+from english_tutor.teacher.runner import TeacherConfig, TeacherService
 
 
 @pytest.fixture

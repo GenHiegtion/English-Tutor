@@ -1,4 +1,4 @@
-"""Copy the teachers in src/ea_llm/data/personas.yaml into Talkwise's teacher_personas table.
+"""Copy the teachers in src/english_tutor/data/personas.yaml into Talkwise's teacher_personas table.
 
 The YAML file is the source of the teachers' content; the table is what the service reads.
 New teachers are inserted, changed ones updated (version + 1), identical ones left alone.
@@ -23,9 +23,9 @@ from dotenv import load_dotenv
 from sqlalchemy import JSON, Column, DateTime, Integer, MetaData, String, Table, Text, select
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from ea_llm.adapters.memory import load_seed_personas
-from ea_llm.adapters.sql import create_engine
-from ea_llm.models import Persona
+from english_tutor.adapters.memory import load_seed_personas
+from english_tutor.adapters.sql import create_engine
+from english_tutor.models import Persona
 
 REVIEWED_BY = "developers"
 CONTENT_FIELDS = (

@@ -1,11 +1,11 @@
 import pytest
 
-from ea_llm.adapters.memory import MemoryPersonaStore, load_seed_scenarios
-from ea_llm.models import LearnerProfile, Persona, SessionSnapshot
-from ea_llm.prompts.builder import build_system
-from ea_llm.prompts.registry import static_bundle
-from ea_llm.teacher.persona import DEFAULT_ADDRESS, compute_address, render_session_block
-from ea_llm.teacher.tools import tools_for
+from english_tutor.adapters.memory import MemoryPersonaStore, load_seed_scenarios
+from english_tutor.models import LearnerProfile, Persona, SessionSnapshot
+from english_tutor.prompts.builder import build_system
+from english_tutor.prompts.registry import static_bundle
+from english_tutor.teacher.persona import DEFAULT_ADDRESS, compute_address, render_session_block
+from english_tutor.teacher.tools import tools_for
 
 PERSONAS = {p.id: p for p in MemoryPersonaStore.from_seed()._by_id.values()}
 

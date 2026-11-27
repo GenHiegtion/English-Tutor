@@ -3,8 +3,8 @@ import json
 import pytest
 
 from conftest import collect, make_service, turn_ctx
-from ea_llm.providers.base import TextPart, ToolResultPart, ToolUsePart
-from ea_llm.teacher.events import (
+from english_tutor.providers.base import TextPart, ToolResultPart, ToolUsePart
+from english_tutor.teacher.events import (
     BoardUpdate,
     MistakeNoted,
     OutputSegment,
@@ -12,7 +12,7 @@ from ea_llm.teacher.events import (
     TurnEnd,
     TurnFailed,
 )
-from ea_llm.testing import FakeProvider, failure, reply
+from english_tutor.testing import FakeProvider, failure, reply
 
 MISTAKE = (
     "record_mistake",

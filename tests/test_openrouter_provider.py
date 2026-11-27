@@ -4,8 +4,8 @@ import anthropic
 import httpx
 import pytest
 
-from ea_llm.config import ConfigError
-from ea_llm.providers.base import (
+from english_tutor.config import ConfigError
+from english_tutor.providers.base import (
     CallMeta,
     LLMRequest,
     Message,
@@ -20,7 +20,7 @@ from ea_llm.providers.base import (
     ToolUsePart,
     UsageReport,
 )
-from ea_llm.providers.openrouter_provider import OpenRouterProvider, map_error
+from english_tutor.providers.openrouter_provider import OpenRouterProvider, map_error
 
 META = CallMeta(session_id="s1", user_id="u1", prompt_version="t@1#x")
 

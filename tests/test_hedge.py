@@ -1,9 +1,9 @@
 import asyncio
 import time
 
-from ea_llm.providers.base import CallMeta, LLMRequest, ProviderError, Stop, TextDelta
-from ea_llm.teacher.hedge import LoserCancelled, hedged_stream
-from ea_llm.testing import FakeProvider, failure, reply
+from english_tutor.providers.base import CallMeta, LLMRequest, ProviderError, Stop, TextDelta
+from english_tutor.teacher.hedge import LoserCancelled, hedged_stream
+from english_tutor.testing import FakeProvider, failure, reply
 
 REQ = LLMRequest(
     role="teacher",

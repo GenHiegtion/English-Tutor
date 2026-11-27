@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select, update
 
-from ea_llm.adapters.memory import load_seed_personas
-from ea_llm.adapters.sql import SqlPersonaStore, create_engine
+from english_tutor.adapters.memory import load_seed_personas
+from english_tutor.adapters.sql import SqlPersonaStore, create_engine
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "seed_personas.py"
 NOW = datetime(2026, 11, 27, 9, 0, tzinfo=UTC)

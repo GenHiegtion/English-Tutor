@@ -1,12 +1,12 @@
 import pytest
 
-from ea_llm.models import Address
-from ea_llm.teacher import guards
-from ea_llm.teacher.context import LearnerInput
-from ea_llm.teacher.input_checks import check_input
-from ea_llm.teacher.parser import Segment
-from ea_llm.teacher.tools import validate_args
-from ea_llm.teacher.wordlist import load_wordlist
+from english_tutor.models import Address
+from english_tutor.teacher import guards
+from english_tutor.teacher.context import LearnerInput
+from english_tutor.teacher.input_checks import check_input
+from english_tutor.teacher.parser import Segment
+from english_tutor.teacher.tools import validate_args
+from english_tutor.teacher.wordlist import load_wordlist
 
 
 def seg(text, lang="vi", **kw):

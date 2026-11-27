@@ -1,6 +1,6 @@
-"""Read-only check that DATABASE_URL is ready for the EA-LLM service.
+"""Read-only check that DATABASE_URL is ready for the English Tutor service.
 
-Checks the connection, the role's privileges, the columns EA-LLM reads and writes, and the
+Checks the connection, the role's privileges, the columns English Tutor reads and writes, and the
 catalogs (published teachers, active scenarios). Sends only SELECTs and never prints the URL.
 
 Run:  uv run python scripts/check_db.py
@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from ea_llm.adapters.sql import (
+from english_tutor.adapters.sql import (
     METADATA,
     SqlPersonaStore,
     SqlScenarioStore,
@@ -88,7 +88,7 @@ async def check_role(conn: AsyncConnection, report: Report) -> None:
 
 
 async def check_columns(conn: AsyncConnection, report: Report) -> bool:
-    """Every table and column EA-LLM mirrors must exist; return False when a table is missing."""
+    """Every table and column English Tutor mirrors must exist; False when a table is missing."""
     all_present = True
     for table in METADATA.sorted_tables:
         rows = await conn.execute(
@@ -107,7 +107,9 @@ async def check_columns(conn: AsyncConnection, report: Report) -> bool:
         if missing:
             report.fail(f"table '{table.name}' lacks columns: {', '.join(missing)}")
         else:
-            report.ok(f"table '{table.name}' has the {len(table.columns)} columns EA-LLM uses")
+            report.ok(
+                f"table '{table.name}' has the {len(table.columns)} columns English Tutor uses"
+            )
     return all_present
 
 
@@ -184,10 +186,10 @@ async def check_catalogs(engine: AsyncEngine, conn: AsyncConnection, report: Rep
 
 
 async def check_history(conn: AsyncConnection, report: Report) -> None:
-    """How many sessions exist and how many of them were written by EA-LLM."""
+    """How many sessions exist and how many of them were written by English Tutor."""
     total = await _scalar(conn, "SELECT count(*) FROM sessions")
     ours = await _scalar(conn, "SELECT count(*) FROM sessions WHERE snapshot IS NOT NULL")
-    report.ok(f"sessions: {total} in total, {ours} written by EA-LLM (with a snapshot)")
+    report.ok(f"sessions: {total} in total, {ours} written by English Tutor (with a snapshot)")
 
 
 async def run(url: str) -> Report:

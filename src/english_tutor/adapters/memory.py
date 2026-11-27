@@ -1,0 +1,106 @@
+"""In-memory port implementations for development, tests, the CLI and evals."""
+
+from __future__ import annotations
+
+import copy
+from pathlib import Path
+
+import yaml
+
+from english_tutor.models import LearnerProfile, Persona, SessionSnapshot, StoredMessage, TurnRecord
+from english_tutor.teacher.context import ScenarioRef
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+
+class MemoryHistoryStore:
+    """HistoryStore kept in process memory."""
+
+    def __init__(self) -> None:
+        self.sessions: dict[str, SessionSnapshot] = {}
+        self.messages: dict[str, list[StoredMessage]] = {}
+        self.turns: dict[str, TurnRecord] = {}  # turn_id -> record (idempotency + usage log)
+        self.closed: set[str] = set()
+
+    async def save_session(self, snapshot: SessionSnapshot) -> None:
+        self.sessions[snapshot.session_id] = snapshot.model_copy(deep=True)
+        self.messages.setdefault(snapshot.session_id, [])
+
+    async def load_session(self, session_id: str) -> SessionSnapshot | None:
+        snap = self.sessions.get(session_id)
+        return snap.model_copy(deep=True) if snap else None
+
+    async def load_messages(self, session_id: str) -> list[StoredMessage]:
+        return copy.deepcopy(self.messages.get(session_id, []))
+
+    async def append_turn(self, session_id: str, turn: TurnRecord) -> None:
+        if turn.turn_id in self.turns:
+            return
+        self.turns[turn.turn_id] = turn.model_copy(deep=True)
+        self.messages.setdefault(session_id, []).extend(copy.deepcopy(turn.messages))
+
+    async def close_session(self, session_id: str) -> bool:
+        if session_id not in self.sessions:
+            return False
+        self.closed.add(session_id)
+        return True
+
+    async def is_closed(self, session_id: str) -> bool:
+        return session_id in self.closed
+
+
+class MemoryPersonaStore:
+    """PersonaStore over a fixed list (the seed personas by default)."""
+
+    def __init__(self, personas: list[Persona]) -> None:
+        self._by_id = {p.id: p for p in personas}
+
+    @classmethod
+    def from_seed(cls) -> MemoryPersonaStore:
+        return cls(load_seed_personas())
+
+    async def list_personas(self) -> list[Persona]:
+        return [p for p in self._by_id.values() if p.status == "published"]
+
+    async def get_persona(self, persona_id: str) -> Persona | None:
+        return self._by_id.get(persona_id)
+
+
+class MemoryLearnerStore:
+    """LearnerStore kept in process memory."""
+
+    def __init__(self, profiles: list[LearnerProfile] | None = None) -> None:
+        self._by_id = {p.user_id: p for p in profiles or []}
+
+    async def get_profile(self, user_id: str) -> LearnerProfile | None:
+        return self._by_id.get(user_id)
+
+    def put(self, profile: LearnerProfile) -> None:
+        self._by_id[profile.user_id] = profile
+
+
+class MemoryScenarioStore:
+    """ScenarioStore over a fixed list (the seed scenarios by default)."""
+
+    def __init__(self, scenarios: list[ScenarioRef]) -> None:
+        self._by_id = {s.id: s for s in scenarios}
+
+    @classmethod
+    def from_seed(cls) -> MemoryScenarioStore:
+        return cls(load_seed_scenarios())
+
+    async def list_scenarios(self) -> list[ScenarioRef]:
+        return list(self._by_id.values())
+
+    async def get_scenario(self, scenario_id: str) -> ScenarioRef | None:
+        return self._by_id.get(scenario_id)
+
+
+def load_seed_personas() -> list[Persona]:
+    raw = yaml.safe_load((DATA_DIR / "personas.yaml").read_text(encoding="utf-8"))
+    return [Persona.model_validate(item) for item in raw]
+
+
+def load_seed_scenarios() -> list[ScenarioRef]:
+    raw = yaml.safe_load((DATA_DIR / "scenarios.yaml").read_text(encoding="utf-8"))
+    return [ScenarioRef.model_validate(item) for item in raw]

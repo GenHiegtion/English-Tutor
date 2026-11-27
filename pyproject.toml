@@ -1,5 +1,5 @@
 [project]
-name = "ea-llm"
+name = "english-tutor"
 version = "0.1.0"
 description = "LLM module for the Talkwise English-teaching app: teacher, examiner and reporter roles."
 readme = "README.md"
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ea-llm = "ea_llm.cli:main"
+english-tutor = "english_tutor.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]
