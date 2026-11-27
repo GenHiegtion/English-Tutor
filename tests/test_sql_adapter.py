@@ -2,7 +2,8 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import insert, select, update
+from sqlalchemy import event, insert, select, update
+from sqlalchemy.exc import DBAPIError
 
 from english_tutor.adapters.memory import load_seed_personas, load_seed_scenarios
 from english_tutor.adapters.sql import (
@@ -11,6 +12,7 @@ from english_tutor.adapters.sql import (
     SqlLearnerStore,
     SqlPersonaStore,
     SqlScenarioStore,
+    _retrying,
     ai_usage_logs,
     async_database_url,
     create_engine,
@@ -261,10 +263,10 @@ async def test_close_session(engine, stores):
     await service.open_session(
         session_id=SESSION, user_id=str(USER), channel="text", mode="free_chat", persona_id="lan"
     )
-    assert not await history.is_closed(SESSION)
+    assert not (await history.load_session_state(SESSION)).closed
     assert await history.close_session(SESSION)
     assert await history.close_session(SESSION)  # idempotent
-    assert await history.is_closed(SESSION)
+    assert (await history.load_session_state(SESSION)).closed
     (session_row,) = await rows(engine, sessions)
     assert session_row.status == "done" and session_row.ended_at is not None
     assert not await history.close_session(str(uuid.uuid4()))
@@ -303,3 +305,108 @@ async def test_session_ids_must_be_uuids(stores):
 async def test_append_turn_for_unknown_session_fails(stores):
     with pytest.raises(LookupError):
         await stores[0].append_turn(SESSION, TurnRecord(turn_id="t1", messages=[]))
+
+
+class StatementCounter:
+    """Counts the SQL statements an engine sends (each one is a round trip to the database)."""
+
+    def __init__(self, engine) -> None:
+        self.statements: list[str] = []
+        event.listen(engine.sync_engine, "before_cursor_execute", self._seen)
+
+    def _seen(self, conn, cursor, statement, *args) -> None:
+        self.statements.append(statement.split()[0].upper())
+
+    def take(self) -> list[str]:
+        taken, self.statements = self.statements, []
+        return taken
+
+
+async def test_a_turn_reads_with_few_statements(engine, stores):
+    history = stores[0]
+    service = service_for(stores, reply("<vi>Ừ.</vi>"))
+    await service.open_session(
+        session_id=SESSION, user_id=str(USER), channel="text", mode="free_chat", persona_id="lan"
+    )
+    [e async for e in service.run_turn(ctx("t1", "hi", mode="free_chat"))]
+    counter = StatementCounter(engine)
+
+    state = await history.load_session_state(SESSION)
+    assert counter.take() == ["SELECT"]  # auth and "ended?" in one query
+    assert state is not None and not state.closed and state.snapshot.persona_id == "lan"
+
+    snapshot, stored = await history.load_conversation(SESSION)
+    assert counter.take() == ["SELECT", "SELECT"]  # everything a turn needs before the LLM
+    assert snapshot == state.snapshot and [m.turn_id for m in stored] == ["t1", "t1"]
+
+    await history.save_session(snapshot)
+    assert counter.take() == ["INSERT"]  # one upsert
+
+    again = stored[0].model_copy(update={"turn_id": "t2"})
+    record = TurnRecord(turn_id="t2", messages=[again], usage=[])
+    await history.append_turn(SESSION, record)
+    assert counter.take() == ["SELECT", "SELECT", "INSERT"]  # lock, duplicate+index, insert
+    await history.append_turn(SESSION, record)
+    assert counter.take() == ["SELECT", "SELECT"]  # already stored: nothing written
+
+
+async def test_conversation_of_unknown_or_legacy_sessions_is_empty(engine, stores):
+    history = stores[0]
+    assert await history.load_conversation("not-a-uuid") == (None, [])
+    assert await history.load_conversation(str(uuid.uuid4())) == (None, [])
+    assert await history.load_session_state(str(uuid.uuid4())) is None
+
+
+async def test_upsert_keeps_the_row_started_and_ended_state(engine, stores):
+    history = stores[0]
+    service = service_for(stores)
+    snapshot = await service.open_session(
+        session_id=SESSION, user_id=str(USER), channel="text", mode="free_chat", persona_id="lan"
+    )
+    await history.close_session(SESSION)
+    later = SqlHistoryStore(engine, clock=lambda: datetime(2030, 1, 1, tzinfo=UTC))
+    await later.save_session(snapshot.model_copy(update={"persona_id": "minh"}))
+    (row,) = await rows(engine, sessions)
+    assert row.persona_id == "minh" and row.status == "done"
+    assert row.started_at.year == 2026  # the first insert's time stays
+
+
+class _Dropped(Exception):
+    pass
+
+
+def _dropped(invalidated: bool) -> DBAPIError:
+    return DBAPIError("SELECT 1", {}, _Dropped(), connection_invalidated=invalidated)
+
+
+async def test_a_step_is_retried_once_when_the_server_closed_the_connection():
+    calls = []
+
+    async def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise _dropped(invalidated=True)
+        return "ok"
+
+    assert await _retrying(flaky) == "ok"
+    assert len(calls) == 2
+
+
+async def test_other_database_errors_are_not_retried():
+    calls = []
+
+    async def broken():
+        calls.append(1)
+        raise _dropped(invalidated=False)
+
+    with pytest.raises(DBAPIError):
+        await _retrying(broken)
+    assert len(calls) == 1
+
+
+async def test_a_second_drop_is_raised():
+    async def always_dropped():
+        raise _dropped(invalidated=True)
+
+    with pytest.raises(DBAPIError):
+        await _retrying(always_dropped)

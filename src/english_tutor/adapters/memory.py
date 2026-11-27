@@ -7,7 +7,14 @@ from pathlib import Path
 
 import yaml
 
-from english_tutor.models import LearnerProfile, Persona, SessionSnapshot, StoredMessage, TurnRecord
+from english_tutor.models import (
+    LearnerProfile,
+    Persona,
+    SessionSnapshot,
+    SessionState,
+    StoredMessage,
+    TurnRecord,
+)
 from english_tutor.teacher.context import ScenarioRef
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -30,8 +37,18 @@ class MemoryHistoryStore:
         snap = self.sessions.get(session_id)
         return snap.model_copy(deep=True) if snap else None
 
+    async def load_session_state(self, session_id: str) -> SessionState | None:
+        snap = await self.load_session(session_id)
+        return SessionState(snapshot=snap, closed=session_id in self.closed) if snap else None
+
     async def load_messages(self, session_id: str) -> list[StoredMessage]:
         return copy.deepcopy(self.messages.get(session_id, []))
+
+    async def load_conversation(
+        self, session_id: str
+    ) -> tuple[SessionSnapshot | None, list[StoredMessage]]:
+        snap = await self.load_session(session_id)
+        return snap, (await self.load_messages(session_id) if snap else [])
 
     async def append_turn(self, session_id: str, turn: TurnRecord) -> None:
         if turn.turn_id in self.turns:
@@ -44,9 +61,6 @@ class MemoryHistoryStore:
             return False
         self.closed.add(session_id)
         return True
-
-    async def is_closed(self, session_id: str) -> bool:
-        return session_id in self.closed
 
 
 class MemoryPersonaStore:

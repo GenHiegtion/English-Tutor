@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from english_tutor.models import LearnerProfile, Persona, SessionSnapshot, StoredMessage, TurnRecord
+from english_tutor.models import (
+    LearnerProfile,
+    Persona,
+    SessionSnapshot,
+    SessionState,
+    StoredMessage,
+    TurnRecord,
+)
 from english_tutor.teacher.context import ScenarioRef
 
 
@@ -20,16 +27,21 @@ class HistoryStore(Protocol):
 
     async def load_session(self, session_id: str) -> SessionSnapshot | None: ...
 
+    async def load_session_state(self, session_id: str) -> SessionState | None:
+        """The snapshot and whether ``close_session`` ran, in one read; None if unknown."""
+
     async def load_messages(self, session_id: str) -> list[StoredMessage]: ...
+
+    async def load_conversation(
+        self, session_id: str
+    ) -> tuple[SessionSnapshot | None, list[StoredMessage]]:
+        """The snapshot and its messages together: what a turn reads before calling the LLM."""
 
     async def append_turn(self, session_id: str, turn: TurnRecord) -> None:
         """Atomically store the turn's messages and usage. No-op if ``turn.turn_id`` exists."""
 
     async def close_session(self, session_id: str) -> bool:
         """Mark the session as ended (idempotent). False if the session does not exist."""
-
-    async def is_closed(self, session_id: str) -> bool:
-        """True once ``close_session`` ran for this session."""
 
 
 class PersonaStore(Protocol):

@@ -183,8 +183,7 @@ class TeacherService:
 
     # --------------------------------------------------------------------- turns
     async def run_turn(self, ctx: TurnContext) -> AsyncIterator[TeacherEvent]:
-        snapshot = await self.history.load_session(ctx.session_id)
-        stored = await self.history.load_messages(ctx.session_id) if snapshot else []
+        snapshot, stored = await self.history.load_conversation(ctx.session_id)
         if (
             snapshot is None
             or (snapshot.channel, snapshot.mode) != (ctx.channel, ctx.mode)
