@@ -61,7 +61,8 @@ from ea_llm.teacher.runner import TeacherService
 
 logger = logging.getLogger(__name__)
 
-HEALTH_DB_TIMEOUT_S = 3.0
+# A cold Neon compute in another region needs about 5 s for the first connection.
+HEALTH_DB_TIMEOUT_S = 8.0
 MINUTE_S = 60.0
 HOUR_S = 3600.0
 
@@ -100,8 +101,43 @@ class ServiceState:
     turns: TurnStreams
     turn_limits: SlidingWindowLimiter
     session_limits: SlidingWindowLimiter
-    engine: AsyncEngine | None
+    database: DatabaseProbe | None
     require_known_learner: bool  # with the Talkwise database a session needs a real user row
+
+
+class DatabaseProbe:
+    """Pings the database for /health; a ping keeps running after the request stops waiting.
+
+    Cancelling a slow first connection would throw it away, so every later check would start
+    over and time out again. Letting it finish puts the connection in the pool, and a single
+    ping at a time is shared by concurrent checks.
+    """
+
+    def __init__(self, engine: AsyncEngine, timeout_s: float = HEALTH_DB_TIMEOUT_S) -> None:
+        self._engine = engine
+        self._timeout_s = timeout_s
+        self._ping: asyncio.Task[None] | None = None
+
+    async def check(self) -> None:
+        """Raise TimeoutError or the database error when the database does not answer in time."""
+        if self._ping is None or self._ping.done():
+            self._ping = asyncio.create_task(ping(self._engine))
+            self._ping.add_done_callback(_mark_retrieved)
+        async with asyncio.timeout(self._timeout_s):
+            await asyncio.shield(self._ping)
+
+    async def close(self) -> None:
+        """Cancel a ping still running at shutdown."""
+        if self._ping is not None and not self._ping.done():
+            self._ping.cancel()
+            await asyncio.gather(self._ping, return_exceptions=True)
+
+
+def _mark_retrieved(task: asyncio.Task[None]) -> None:
+    # A ping nobody waits for any more must not log "exception was never retrieved"; the
+    # request that gave up on it already logged the timeout.
+    if not task.cancelled():
+        task.exception()
 
 
 def get_state(request: Request) -> ServiceState:
@@ -131,11 +167,10 @@ router = APIRouter()
 @router.get("/health", tags=["meta"], responses=error_responses(503))
 async def health(state: StateDep) -> Health:
     """Liveness and readiness for Railway: also checks the database when there is one."""
-    if state.engine is None:
+    if state.database is None:
         return Health(database="not_configured")
     try:
-        async with asyncio.timeout(HEALTH_DB_TIMEOUT_S):
-            await ping(state.engine)
+        await state.database.check()
     except (SQLAlchemyError, OSError, TimeoutError):
         logger.warning("health check: database unavailable", exc_info=True)
         raise ApiError(503, "database_unavailable", "database unavailable") from None
@@ -294,11 +329,14 @@ def create_app(
 ) -> FastAPI:
     """The FastAPI app over a ready TeacherService; ``engine`` is disposed on shutdown."""
     turns = TurnStreams(service, settings.turn_lock_wait_s)
+    database = DatabaseProbe(engine) if engine is not None else None
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         await turns.shutdown()
+        if database is not None:
+            await database.close()
         if engine is not None:
             await engine.dispose()
 
@@ -319,7 +357,7 @@ def create_app(
         turns=turns,
         turn_limits=SlidingWindowLimiter(settings.turns_per_minute, MINUTE_S),
         session_limits=SlidingWindowLimiter(settings.sessions_per_hour, HOUR_S),
-        engine=engine,
+        database=database,
         require_known_learner=require_known_learner,
     )
     install_error_handlers(app)
