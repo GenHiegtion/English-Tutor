@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from conftest import collect, make_service, turn_ctx
+from conftest import LearnerProfile, collect, make_service, turn_ctx
 from english_tutor.providers.base import TextPart, ToolResultPart, ToolUsePart
 from english_tutor.teacher.events import (
     BoardUpdate,
@@ -145,6 +145,9 @@ async def test_text_outside_tags_is_dropped_and_blocked_scores_flagged(stores, s
     segs = [e for e in events if isinstance(e, OutputSegment)]
     assert [s.text for s in segs] == ["Well done today."]
     assert {"dropped_chars", "score_spoken"} <= set(events[-1].guard_flags)
+    # The dropped text is kept for evals but never serialized for the client.
+    assert events[-1].dropped_samples == ["junk"]
+    assert "junk" not in events[-1].model_dump_json()
 
 
 async def test_refusal_and_empty_turn_use_fixed_phrases(stores, scenario):
@@ -230,7 +233,7 @@ async def test_persona_switch_updates_snapshot_and_greets(stores, scenario):
     assert snap.persona_id == "hung" and snap.address.teacher == "tôi"
     req = provider.requests[1]
     assert (
-        "Thầy Hùng" in req.system[1].text
+        "Name: Hùng (male)." in req.system[1].text
         and req.system[0].text == provider.requests[0].system[0].text
     )
     notes = [p.text for p in req.messages[-1].content if isinstance(p, TextPart)]
@@ -327,3 +330,60 @@ async def test_numbers_are_grounded_in_free_chat_but_not_checked_in_scenario(sto
     await open_session(service, scenario)
     events = await collect(service, turn_ctx("t2", "how much?", scenario=scenario))
     assert "ungrounded_number" not in events[-1].guard_flags
+
+
+async def test_turns_answering_a_vietnamese_question_do_not_count_for_the_vi_ratio(
+    stores, scenario
+):
+    # 16 Vietnamese words, then 4 Vietnamese + 5 English: 44% alone (off the A1 target of 70%),
+    # 80% (on target) if the first turn were counted too.
+    answer = "<vi>Vì có yesterday là chuyện đã qua nên mình dùng went thay cho go nhé.</vi>"
+    mixed = "<vi>Bạn nói đúng rồi.</vi><en>I went to school yesterday.</en>"
+    service = make_service(stores, FakeProvider([reply(answer), reply(mixed)]))
+    await open_session(service, scenario)
+
+    asked = await collect(service, turn_ctx("t1", "Tại sao phải dùng went vậy?", scenario=scenario))
+    assert "vi_ratio_off" not in asked[-1].guard_flags
+    later = await collect(service, turn_ctx("t2", "I go to school yesterday", scenario=scenario))
+    assert "vi_ratio_off" in later[-1].guard_flags
+
+
+@pytest.mark.parametrize(
+    ("cefr", "lines"),
+    [
+        (
+            "A1",
+            [
+                ("vi", "Mình và bạn cùng nói chuyện bằng tiếng Anh nhé, chủ đề gì cũng được."),
+                ("en", "What do you want to talk about?"),
+            ],
+        ),
+        ("B2", [("en", "What would you like to talk about today?")]),
+    ],
+)
+async def test_free_chat_opener_does_not_call_llm(stores, cefr, lines):
+    history, _, learners = stores
+    learners.put(LearnerProfile(user_id="u1", cefr=cefr))
+    provider = FakeProvider([])
+    service = make_service(stores, provider)
+    await service.open_session(
+        session_id="s1", user_id="u1", channel="text", mode="free_chat", persona_id="lan"
+    )
+    events = await collect(service, turn_ctx("t0", None, mode="free_chat"))
+    segs = [(e.lang, e.text) for e in events if isinstance(e, OutputSegment)]
+    assert segs == lines and provider.requests == []
+    assert kinds(events)[-2:] == ["TerminalAction", "TurnEnd"]
+    stored = await history.load_messages("s1")
+    assert [m.message.role for m in stored] == ["user", "assistant"]
+    again = await collect(service, turn_ctx("t1", None, mode="free_chat"))
+    assert again[0].reason == "invalid_context"
+
+
+async def test_the_fixed_opener_does_not_count_for_the_vi_ratio(stores, scenario):
+    _, _, learners = stores
+    learners.put(LearnerProfile(user_id="u1", cefr="C1"))  # target 10% Vietnamese
+    service = make_service(stores, FakeProvider([reply("<en>Sure, coming right up.</en>")]))
+    await open_session(service, scenario)
+    await collect(service, turn_ctx("t0", None, scenario=scenario))  # a Vietnamese intro line
+    events = await collect(service, turn_ctx("t1", "A latte, please.", scenario=scenario))
+    assert "vi_ratio_off" not in events[-1].guard_flags

@@ -58,7 +58,7 @@ from english_tutor.teacher.history import (
 )
 from english_tutor.teacher.input_checks import check_input
 from english_tutor.teacher.parser import LangTagParser, Segment
-from english_tutor.teacher.persona import compute_address
+from english_tutor.teacher.persona import compute_address, spoken_name
 from english_tutor.teacher.tools import (
     RecordMistakeArgs,
     ShowBoardArgs,
@@ -71,6 +71,7 @@ from english_tutor.teacher.wordlist import CefrWordlist, load_wordlist
 
 logger = logging.getLogger(__name__)
 RECENT_RATIO_TURNS = 10
+OPENER_MODES: frozenset[Mode] = frozenset({"scenario", "free_chat"})  # teacher speaks first
 LEARNER_PREFIX: dict[Channel, str] = {"voice": "[Học viên nói]:", "text": "[Học viên viết]:"}
 
 
@@ -207,8 +208,8 @@ class TeacherService:
             yield self._segment_event(turn, "vi", greeting)
 
         if ctx.learner_input is None:
-            if ctx.mode == "scenario" and not stored:
-                async with aclosing(self._scenario_opener(turn)) as inner:
+            if ctx.mode in OPENER_MODES and not stored:
+                async with aclosing(self._opener(turn)) as inner:
                     async for ev in inner:
                         yield ev
             else:
@@ -227,22 +228,29 @@ class TeacherService:
         snap.address = compute_address(persona, snap.learner.age_band)
         await self.history.save_session(snap)
         turn.flags.append("persona_switched")
+        name = spoken_name(persona, snap.address)
         return (
-            f"[System note: the learner just switched teachers. From now on you are "
-            f'{persona.name}; call yourself "{snap.address.teacher}" and the learner '
-            f'"{snap.address.learner}". Continue exactly where the lesson stopped]'
+            f"[System note: the learner just switched teachers. From now on you are {name}; "
+            f'call yourself "{snap.address.teacher}" and the learner "{snap.address.learner}". '
+            "Continue exactly where the lesson stopped]"
         )
 
-    # ----------------------------------------------------------- scenario opener
-    async def _scenario_opener(self, turn: _Turn) -> AsyncIterator[TeacherEvent]:
-        scenario = turn.snapshot.scenario
-        assert scenario is not None
-        if scenario.goal_vi:
-            text = phrases.scenario_intro(turn.snapshot.address, scenario.goal_vi)
-            yield self._segment_event(turn, "vi", text)
+    # -------------------------------------------------------------------- opener
+    async def _opener(self, turn: _Turn) -> AsyncIterator[TeacherEvent]:
+        """The first turn of a session, from fixed lines: the teacher speaks first, no LLM."""
+        snap = turn.snapshot
+        if snap.mode == "free_chat":
+            for lang, text in phrases.free_chat_opener(snap.address, snap.learner.cefr):
+                yield self._segment_event(turn, lang, text)
         else:
-            turn.flags.append("missing_goal_vi")
-        yield self._segment_event(turn, "en", scenario.opener)
+            scenario = snap.scenario
+            assert scenario is not None
+            if scenario.goal_vi:
+                text = phrases.scenario_intro(snap.address, scenario.goal_vi)
+                yield self._segment_event(turn, "vi", text)
+            else:
+                turn.flags.append("missing_goal_vi")
+            yield self._segment_event(turn, "en", scenario.opener)
         start = StoredMessage(
             turn_id=turn.ctx.turn_id,
             message=Message(role="user", content=[TextPart(text=SESSION_START_NOTE)]),
@@ -469,7 +477,7 @@ class TeacherService:
     def _finalize_flags(
         self, turn: _Turn, stored: list[StoredMessage], user_msg: StoredMessage
     ) -> None:
-        recent = _recent_segments(stored, turn.segments)
+        recent = _recent_segments(stored, turn.segments, _wrote_vietnamese(user_msg))
         scenario = turn.ctx.scenario
         turn.flags += guards.check_turn(
             turn.segments,
@@ -634,6 +642,7 @@ class TeacherService:
             cache_read_tokens=usage.cache_read_tokens if usage else 0,
             cache_write_tokens=usage.cache_write_tokens if usage else 0,
             dropped_chars=turn.parser.dropped_chars,
+            dropped_samples=list(turn.parser.dropped_samples),
             guard_flags=sorted(set(turn.flags)),
             provider=provider or (usage.provider if usage else "unknown"),
             fallback_used=turn.fallback_used,
@@ -660,9 +669,40 @@ class TeacherService:
         await self._save(turn, messages, self._usage_records(turn, cancelled=True))
 
 
-def _recent_segments(stored: list[StoredMessage], current: list[Segment]) -> list[Segment]:
-    """Segments of the last assistant turns plus the current one, for the Vietnamese ratio."""
-    assistants = [m for m in stored if m.message.role == "assistant"][-RECENT_RATIO_TURNS:]
+def _skip_for_ratio(item: StoredMessage) -> bool:
+    """Whether the answer to this user message says nothing about the level's Vietnamese ratio.
+
+    The opener is fixed text, and a learner who writes in Vietnamese is answered in Vietnamese
+    at every level.
+    """
+    texts = [p.text for p in item.message.content if isinstance(p, TextPart)]
+    return texts == [SESSION_START_NOTE] or _wrote_vietnamese(item)
+
+
+def _wrote_vietnamese(item: StoredMessage) -> bool:
+    """Whether the learner's line in a user message is mostly Vietnamese."""
+    prefixes = tuple(LEARNER_PREFIX.values())
+    for part in item.message.content:
+        if isinstance(part, TextPart) and part.text.startswith(prefixes):
+            return guards.looks_vietnamese(part.text.split(":", 1)[1])
+    return False
+
+
+def _recent_segments(
+    stored: list[StoredMessage], current: list[Segment], current_in_vietnamese: bool
+) -> list[Segment]:
+    """Segments of the last assistant turns plus the current one, for the Vietnamese ratio.
+
+    Turns answering a message for which ``_skip_for_ratio`` holds are left out.
+    """
+    turns: list[tuple[StoredMessage, bool]] = []
+    skip = False
+    for item in stored:
+        if item.message.role == "user":
+            skip = _skip_for_ratio(item)
+        elif item.message.role == "assistant":
+            turns.append((item, skip))
+    assistants = [item for item, skipped in turns[-RECENT_RATIO_TURNS:] if not skipped]
     segments: list[Segment] = []
     for item in assistants:
         parser = LangTagParser()
@@ -670,7 +710,7 @@ def _recent_segments(stored: list[StoredMessage], current: list[Segment]) -> lis
             if isinstance(part, TextPart):
                 segments += parser.feed(part.text)
         segments += parser.finish()
-    return [*segments, *current]
+    return segments if current_in_vietnamese else [*segments, *current]
 
 
 def _grounding_texts(

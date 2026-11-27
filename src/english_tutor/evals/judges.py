@@ -66,6 +66,7 @@ class CaseResult(BaseModel):
     cefr: str
     persona: str
     learner: str
+    run: int = 0  # 0-based repeat index (run_eval --repeat)
     model: str = ""
     prompt_version: str = ""
     segments: list[SegmentOut] = Field(default_factory=list)
@@ -73,6 +74,7 @@ class CaseResult(BaseModel):
     terminal: str = "open_turn"
     terminal_args: dict = Field(default_factory=dict)
     flags: list[str] = Field(default_factory=list)
+    dropped_samples: list[str] = Field(default_factory=list)  # text written outside the tags
     ttft_ms: int | None = None
     cost_usd: float = 0.0
     failed: str | None = None  # TurnFailed reason
@@ -113,7 +115,10 @@ def check_case(case: EvalCase, result: CaseResult) -> dict[str, CheckOutcome]:
         return checks
     add("turn_completed", True)
     hard = sorted(HARD_FAIL_FLAGS & set(result.flags))
-    add("clean_output", not hard, f"flags: {', '.join(hard)}")
+    detail = f"flags: {', '.join(hard)}"
+    if result.dropped_samples:
+        detail += f" (outside tags: {result.dropped_samples})"
+    add("clean_output", not hard, detail)
     add("has_reply", bool(result.segments), "no segment")
 
     text = result.text()

@@ -4,7 +4,13 @@ from english_tutor.adapters.memory import MemoryPersonaStore, load_seed_scenario
 from english_tutor.models import LearnerProfile, Persona, SessionSnapshot
 from english_tutor.prompts.builder import build_system
 from english_tutor.prompts.registry import static_bundle
-from english_tutor.teacher.persona import DEFAULT_ADDRESS, compute_address, render_session_block
+from english_tutor.teacher.persona import (
+    DEFAULT_ADDRESS,
+    compute_address,
+    given_name,
+    render_session_block,
+    spoken_name,
+)
 from english_tutor.teacher.tools import tools_for
 
 PERSONAS = {p.id: p for p in MemoryPersonaStore.from_seed()._by_id.values()}
@@ -42,6 +48,32 @@ def test_seed_personas_are_valid_and_complete():
 def test_switch_greeting_follows_the_learner_age_band(persona, age, expected):
     p = PERSONAS[persona]
     assert compute_address(p, age).fill(p.switch_greeting) == expected
+
+
+@pytest.mark.parametrize(
+    ("persona", "age", "spoken"),
+    [
+        ("lan", "under_18", "cô Lan"),
+        ("lan", "adult", "Lan"),
+        ("minh", "under_18", "anh Minh"),
+        ("minh", "senior", "Minh"),  # "cháu là Minh", never "cháu là Anh Minh"
+        ("hung", "under_18", "thầy Hùng"),
+        ("hung", "adult", "Hùng"),
+    ],
+)
+def test_the_teacher_says_their_name_with_the_title_of_the_address(persona, age, spoken):
+    p = PERSONAS[persona]
+    address = compute_address(p, age)
+    assert spoken_name(p, address) == spoken
+    block = render_session_block(p, address, LearnerProfile(user_id="u", age_band=age), None)
+    assert f"Name: {given_name(p)} (" in block and f'say "{spoken}"' in block
+
+
+def test_a_title_stored_in_the_name_is_not_repeated():
+    old = PERSONAS["minh"].model_copy(update={"name": "Anh Minh"})
+    assert given_name(old) == "Minh"
+    assert spoken_name(old, compute_address(old, "senior")) == "Minh"
+    assert given_name(old.model_copy(update={"name": "Anh"})) == "Anh"  # a name, not a title
 
 
 def test_switch_greeting_rejects_unknown_placeholders():
