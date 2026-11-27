@@ -106,6 +106,8 @@ class _Turn:
     cancelled_losers: list[Source] = field(default_factory=list)
     prompt_tokens: int = 0  # rough estimate, to price calls cancelled before their usage
     completed: bool = False
+    # messages and usage of a completed turn, stored after turn_end has been sent
+    unsaved: tuple[list[StoredMessage], list[UsageRecord]] | None = None
     blocked: bool = False  # a blocked term was found: the rest of the turn is dropped
 
 
@@ -245,10 +247,12 @@ class TeacherService:
             turn_id=turn.ctx.turn_id,
             message=Message(role="user", content=[TextPart(text=SESSION_START_NOTE)]),
         )
-        await self._save(turn, [start, self._assistant_stored(turn)], usage=[])
         turn.completed = True
-        yield TerminalAction(turn_id=turn.ctx.turn_id, tool="open_turn")
-        yield self._turn_end(turn, provider="none")
+        try:  # end first, write after (see _llm_turn)
+            yield TerminalAction(turn_id=turn.ctx.turn_id, tool="open_turn")
+            yield self._turn_end(turn, provider="none")
+        finally:
+            await self._save(turn, [start, self._assistant_stored(turn)], usage=[])
 
     # ------------------------------------------------------------------ LLM turn
     async def _llm_turn(
@@ -348,9 +352,11 @@ class TeacherService:
             for out in self._fallback_phrases(turn):
                 yield out
 
-            usage = self._usage_records(turn)
-            await self._save(turn, [user_msg, self._assistant_stored(turn)], usage)
+            # The turn is final: its end goes out first and the database write follows (in the
+            # finally below), so the learner is not kept waiting for it. The caller must let
+            # the turn run on after turn_end (TurnStreams does) for the write to happen.
             turn.completed = True
+            turn.unsaved = ([user_msg, self._assistant_stored(turn)], self._usage_records(turn))
             terminal = turn.terminal
             yield TerminalAction(
                 turn_id=ctx.turn_id,
@@ -363,6 +369,8 @@ class TeacherService:
             await stream.aclose()  # cancels any provider task still running
             if not turn.completed:  # the caller cancelled the turn (barge-in / new message)
                 await self._save_cancelled(turn, user_msg)
+            elif turn.unsaved is not None:
+                await self._save(turn, *turn.unsaved)
 
     # ------------------------------------------------------------------- helpers
     def _user_message(
