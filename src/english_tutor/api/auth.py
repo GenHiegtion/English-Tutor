@@ -1,11 +1,11 @@
 """Who is calling: a backend service with an API key, or a learner's browser with a token.
 
-- Services (Talkwise backend, Pipecat voice bot) send ``X-API-Key``. They are trusted to act for
+- Services (the app backend, the Pipecat voice bot) send ``X-API-Key``. They are trusted to act for
   any learner, so they name the ``user_id`` themselves.
-- Browsers send ``Authorization: Bearer <token>``: a short-lived HS256 JWT minted by the Talkwise
+- Browsers send ``Authorization: Bearer <token>``: a short-lived HS256 JWT minted by the app
   backend with the shared secret. Claims: ``sub`` (the learner's user id),
   ``aud`` ("english-tutor"), ``iat``, ``exp`` and optionally ``sid`` (limits the token to one
-  session). The service only checks signature, audience and expiry; it never calls Talkwise back.
+  session). The service only checks signature, audience and expiry; it never calls the backend back.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ class Caller:
     """The authenticated party of a request."""
 
     kind: Literal["service", "learner"]
-    name: str  # "talkwise", "pipecat", "dev" for services; "learner" for tokens
+    name: str  # "backend", "pipecat", "dev" for services; "learner" for tokens
     user_id: str | None = None  # learners only
     session_id: str | None = None  # learners only: the token is limited to this session
 

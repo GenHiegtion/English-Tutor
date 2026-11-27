@@ -13,7 +13,7 @@ def test_from_env_reads_every_setting():
     settings = ApiSettings.from_env(
         {
             "DATABASE_URL": "postgresql://u:p@h/db",
-            "ENGLISH_TUTOR_TALKWISE_API_KEY": KEY,
+            "ENGLISH_TUTOR_BACKEND_API_KEY": KEY,
             "ENGLISH_TUTOR_PIPECAT_API_KEY": " ",
             "ENGLISH_TUTOR_TOKEN_SECRET": SECRET,
             "ENGLISH_TUTOR_CORS_ORIGINS": "https://a.example/, https://b.example,,",
@@ -22,7 +22,7 @@ def test_from_env_reads_every_setting():
             "ENGLISH_TUTOR_SESSIONS_PER_HOUR": "7",
         }
     )
-    assert settings.api_keys == {"talkwise": KEY}
+    assert settings.api_keys == {"backend": KEY}
     assert settings.cors_origins == ["https://a.example", "https://b.example"]
     assert not settings.docs_enabled
     assert (settings.turns_per_minute, settings.sessions_per_hour) == (5, 7)
@@ -51,11 +51,11 @@ def test_bad_limits_are_rejected(value):
 @pytest.mark.parametrize(
     ("settings", "message"),
     [
-        (ApiSettings(api_keys={"talkwise": KEY}), "DATABASE_URL is not set"),
+        (ApiSettings(api_keys={"backend": KEY}), "DATABASE_URL is not set"),
         (ApiSettings(database_url="postgresql://h/db"), "no credential configured"),
         (
-            ApiSettings(database_url="postgresql://h/db", api_keys={"talkwise": "short"}),
-            "ENGLISH_TUTOR_TALKWISE_API_KEY must have >= 32 chars",
+            ApiSettings(database_url="postgresql://h/db", api_keys={"backend": "short"}),
+            "ENGLISH_TUTOR_BACKEND_API_KEY must have >= 32 chars",
         ),
         (
             ApiSettings(database_url="postgresql://h/db", token_secret="short"),
@@ -63,7 +63,7 @@ def test_bad_limits_are_rejected(value):
         ),
         (
             ApiSettings(
-                database_url="postgresql://h/db", api_keys={"talkwise": KEY, "pipecat": KEY}
+                database_url="postgresql://h/db", api_keys={"backend": KEY, "pipecat": KEY}
             ),
             "each caller needs its own API key",
         ),
@@ -76,7 +76,7 @@ def test_production_needs_database_and_strong_credentials(settings, message):
 
 def test_production_accepts_distinct_keys():
     ApiSettings(
-        database_url="postgresql://h/db", api_keys={"talkwise": KEY, "pipecat": OTHER_KEY}
+        database_url="postgresql://h/db", api_keys={"backend": KEY, "pipecat": OTHER_KEY}
     ).validate_for_production()
 
 

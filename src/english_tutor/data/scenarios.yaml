@@ -1,4 +1,4 @@
-# Sample scenarios shaped like Talkwise's `scenarios` table, for the CLI and tests.
+# Sample scenarios shaped like the app's `scenarios` table, for the CLI and tests.
 - id: cafe-order
   title: Ordering at a cafe
   level: A2

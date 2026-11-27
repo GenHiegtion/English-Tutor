@@ -1,4 +1,4 @@
-"""Read-only export of real Talkwise conversations, as raw material for new eval cases.
+"""Read-only export of real conversations, as raw material for new eval cases.
 
 What leaves the database (everything else stays, see ``SESSIONS_SQL`` / ``MESSAGES_SQL``):
   - sessions: mode, channel, scenario id, teacher id, and the learner's CEFR level and age band;
@@ -13,8 +13,8 @@ The output (``exports/<time>/``, gitignored) is never loaded by the eval runner:
 coding agent picks lines from ``draft_cases.yaml``, writes the ``expect`` block and moves them
 into ``evals/cases/teacher/``.
 
-Run (needs DATABASE_URL, the same Talkwise database the service uses; only SELECTs are sent):
-    uv run python -m english_tutor.evals.talkwise_export [--limit 200]
+Run (needs DATABASE_URL, the same app database the service uses; only SELECTs are sent):
+    uv run python -m english_tutor.evals.db_export [--limit 200]
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def build_drafts(conversations: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 draft: dict[str, Any] = {
                     "id": f"rw-{conv['id']}-{i}",
                     "mode": conv["mode"],
-                    "talkwise_scenario": conv["scenario_id"],
+                    "source_scenario": conv["scenario_id"],
                     "cefr": conv["cefr"],
                     "age_band": conv["age_band"],
                     "history": pairs[-HISTORY_TURNS:],
@@ -178,7 +178,7 @@ def _connect(url: str):  # pragma: no cover - needs a database
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs a database
     from dotenv import load_dotenv
 
-    parser = argparse.ArgumentParser(description="Export Talkwise sessions for eval drafting.")
+    parser = argparse.ArgumentParser(description="Export real sessions for eval drafting.")
     parser.add_argument("--limit", type=int, default=200, help="newest finished sessions")
     args = parser.parse_args(argv)
     load_dotenv()

@@ -1,9 +1,9 @@
 # English Tutor
 
-Teacher service of the Talkwise English-learning app. A Vietnamese-speaking teacher persona
-teaches English **in Vietnamese**. English Tutor is the only AI core: a FastAPI service (deployed on
-Railway) that the Talkwise backend and browsers call for text chat, and the Pipecat voice bot
-calls for voice. Talkwise itself holds no AI code.
+AI teacher service of an English-learning app (currently Talkwise). A Vietnamese-speaking
+teacher persona teaches English **in Vietnamese**. English Tutor is the only AI core: a FastAPI
+service (deployed on Railway) that the app backend and browsers call for text chat, and the
+Pipecat voice bot calls for voice. The app itself holds no AI code.
 
 - **Text in, text out.** Audio, STT and TTS stay in the voice bot.
 - **Channels:** `text` (implemented), `voice` (planned: parser and tool schemas are ready, the
@@ -11,7 +11,7 @@ calls for voice. Talkwise itself holds no AI code.
 - **Teachers:** several personas (age, gender, personality); pronouns adapt to the learner's age.
 - **Models:** all calls go through [OpenRouter](https://openrouter.ai) with the Anthropic SDK
   (Haiku 5.5 primary, GPT-6 Luna as hedged fallback).
-- **Data:** the Talkwise Postgres database (Neon). Talkwise's Alembic migrations own the schema;
+- **Data:** the app's Postgres database (Neon). The app's Alembic migrations own the schema;
   English Tutor never creates or migrates tables.
 
 ## Quick start
@@ -38,10 +38,10 @@ development only (`--offline` also skips OpenRouter).
 | `ENGLISH_TUTOR_<ROLE>_MODEL` | no | override the primary model of a role (`TEACHER`, `EXAMINER`, `REPORTER`, `WRITER`) |
 | `ENGLISH_TUTOR_<ROLE>_FALLBACK_MODEL` | no | override the hedged fallback; `none` disables it |
 | `ENGLISH_TUTOR_LOG_LEVEL` | no | level of the `english_tutor` loggers (CLI default `WARNING`, service `INFO`) |
-| `DATABASE_URL` | service, eval export | Talkwise Postgres URL (see "Database role" below) |
-| `ENGLISH_TUTOR_TALKWISE_API_KEY` | service, one credential at least | key of the Talkwise backend |
+| `DATABASE_URL` | service, eval export | app Postgres URL (see "Database role" below) |
+| `ENGLISH_TUTOR_BACKEND_API_KEY` | service, one credential at least | key of the app backend |
 | `ENGLISH_TUTOR_PIPECAT_API_KEY` | service, one credential at least | key of the voice bot |
-| `ENGLISH_TUTOR_TOKEN_SECRET` | service, one credential at least | HS256 secret shared with Talkwise for learner tokens |
+| `ENGLISH_TUTOR_TOKEN_SECRET` | service, one credential at least | HS256 secret shared with the app backend for learner tokens |
 | `ENGLISH_TUTOR_CORS_ORIGINS` | no | comma-separated web origins allowed to call the service |
 | `ENGLISH_TUTOR_DOCS` | no | `off` hides `/docs` and `/openapi.json` |
 | `ENGLISH_TUTOR_TURNS_PER_MINUTE` / `ENGLISH_TUTOR_SESSIONS_PER_HOUR` | no | per-learner limits (20 / 30) |
@@ -75,7 +75,7 @@ The OpenAPI docs at `/docs` (and `/openapi.json`) are the contract for both call
 
 **Authentication.** Backend services send `X-API-Key` and name the `user_id` themselves; they
 may also override profile fields for a session (`learner`). Browsers send
-`Authorization: Bearer <token>`: an HS256 JWT minted by the Talkwise backend with
+`Authorization: Bearer <token>`: an HS256 JWT minted by the app backend with
 `ENGLISH_TUTOR_TOKEN_SECRET`, claims `sub` (user id), `aud` = `english-tutor`, `iat`, `exp` (at most one hour
 after `iat`) and optionally `sid` (limits the token to one session). A learner only reaches
 their own sessions; other ids answer 404.
@@ -100,8 +100,8 @@ request (method, route, status, duration, caller), with no query strings or bodi
 ### Database role
 
 The service reads `users`, `teacher_personas` and `scenarios`, and writes `sessions`,
-`messages` and `ai_usage_logs` (columns from Talkwise migration `0030`). Give it its own Neon
-role with only those rights rather than the Talkwise owner role. Neon's pooled endpoint works:
+`messages` and `ai_usage_logs` (columns from app migration `0030`). Give it its own Neon
+role with only those rights rather than the app's owner role. Neon's pooled endpoint works:
 psycopg runs without server-side prepared statements.
 
 ```bash
@@ -151,7 +151,7 @@ kept in the history.
 ### Ports
 
 The core reads and writes data only through `english_tutor.ports` (`HistoryStore`, `PersonaStore`,
-`LearnerStore`, `ScenarioStore`). `english_tutor.adapters.sql` implements them on the Talkwise database
+`LearnerStore`, `ScenarioStore`). `english_tutor.adapters.sql` implements them on the app database
 (SQLAlchemy async, psycopg 3); `english_tutor.adapters.memory` implements them in memory for the CLI,
 the local server, evals and tests. Rules for every implementation:
 
@@ -182,11 +182,11 @@ Runs land in `eval_runs/` (gitignored). `report` re-applies the current rule che
 baseline stays comparable; with `--baseline` it lists cases that newly fail or lost a judge point.
 Each case runs once, so a single run can move by a case or two from model randomness.
 
-New cases can be drafted from real Talkwise sessions with a read-only export (reads
+New cases can be drafted from real sessions with a read-only export (reads
 `DATABASE_URL`, sends only SELECTs):
 
 ```bash
-uv run python -m english_tutor.evals.talkwise_export --limit 200
+uv run python -m english_tutor.evals.db_export --limit 200
 ```
 
 It writes `exports/<time>/` (gitignored): masked conversations, the public scenarios and one draft
@@ -204,7 +204,7 @@ src/english_tutor/
   prompts/        versioned prompt templates, registry (prompt_version) and builder
   teacher/        parser, tools, guards, history, hedged streaming, runner, personas
   api/            FastAPI service: routes, auth, settings, turn streams, rate limits, JSON logs
-  adapters/       port implementations: Talkwise database (sql.py) and in-memory
+  adapters/       port implementations: app database (sql.py) and in-memory
   data/           seed teachers and scenarios (mirror the DB tables), prices, blocked terms
   pricing.py      price table and cost estimates for calls without a reported cost
   evals/          eval cases, rule checks + judge handoff (run_eval), latency/cost benchmark

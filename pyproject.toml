@@ -1,7 +1,7 @@
 [project]
 name = "english-tutor"
 version = "0.1.0"
-description = "LLM module for the Talkwise English-teaching app: teacher, examiner and reporter roles."
+description = "AI English tutor service: teacher, examiner and reporter roles."
 readme = "README.md"
 authors = [
     { name = "GenHiegtion", email = "hiengt205716@gmail.com" }

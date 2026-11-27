@@ -2,10 +2,10 @@
 
 | Variable | Meaning |
 | --- | --- |
-| ``DATABASE_URL`` | Talkwise Postgres (Neon) URL; required in production |
-| ``ENGLISH_TUTOR_TALKWISE_API_KEY`` | key of the Talkwise backend (``X-API-Key`` header) |
+| ``DATABASE_URL`` | app Postgres (Neon) URL; required in production |
+| ``ENGLISH_TUTOR_BACKEND_API_KEY`` | key of the app backend (``X-API-Key`` header) |
 | ``ENGLISH_TUTOR_PIPECAT_API_KEY`` | key of the voice bot (``X-API-Key`` header) |
-| ``ENGLISH_TUTOR_TOKEN_SECRET`` | HS256 secret shared with Talkwise for browser tokens |
+| ``ENGLISH_TUTOR_TOKEN_SECRET`` | HS256 secret shared with the backend for browser tokens |
 | ``ENGLISH_TUTOR_CORS_ORIGINS`` | comma-separated web origins allowed to call the service |
 | ``ENGLISH_TUTOR_DOCS`` | ``off`` hides ``/docs`` and ``/openapi.json`` (default ``on``) |
 | ``ENGLISH_TUTOR_TURNS_PER_MINUTE`` | turns one learner may start per minute (default 20) |
@@ -23,7 +23,7 @@ from english_tutor.config import ConfigError
 
 DATABASE_URL_ENV = "DATABASE_URL"
 API_KEY_ENVS: dict[str, str] = {
-    "talkwise": "ENGLISH_TUTOR_TALKWISE_API_KEY",
+    "backend": "ENGLISH_TUTOR_BACKEND_API_KEY",
     "pipecat": "ENGLISH_TUTOR_PIPECAT_API_KEY",
 }
 TOKEN_SECRET_ENV = "ENGLISH_TUTOR_TOKEN_SECRET"
