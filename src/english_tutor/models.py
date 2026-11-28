@@ -21,17 +21,31 @@ class Address(BaseModel):
     teacher: str
     learner: str
 
-    def fill(self, template: str) -> str:
-        """Fill {teacher}/{learner} (capitalised: {Teacher}/{Learner}) in a template."""
+    def fill(self, template: str, name: str = "") -> str:
+        """Fill {teacher}/{learner} (capitalised: {Teacher}/{Learner}) and {name} in a template."""
         return template.format(
             teacher=self.teacher,
             learner=self.learner,
             Teacher=self.teacher[:1].upper() + self.teacher[1:],
             Learner=self.learner[:1].upper() + self.learner[1:],
+            name=name,
         )
 
 
 ADDRESS_FIELDS = frozenset({"teacher", "learner", "Teacher", "Learner"})
+# Persona lines may also say the teacher's name, with the title of the address ("cô Lan").
+TEMPLATE_FIELDS = ADDRESS_FIELDS | {"name"}
+# When a voice filler plays (PLAN fillers table): after ask_repeat, after ask_question, while
+# the learner is silent, and when the lesson moves to its next step.
+FILLER_CONTEXTS = frozenset({"ask_repeat", "ask_question", "silence", "next_step"})
+FILLERS_PER_CONTEXT = (3, 5)  # min, max
+
+
+def _check_template(value: str) -> str:
+    names = {name for _, name, _, _ in Formatter().parse(value) if name is not None}
+    if not names <= TEMPLATE_FIELDS:
+        raise ValueError(f"unknown placeholders {sorted(names - TEMPLATE_FIELDS)}")
+    return value
 
 
 class Persona(BaseModel):
@@ -40,20 +54,37 @@ class Persona(BaseModel):
     gender: Gender
     age_band: AgeBand  # the teacher's own age group
     personality: str  # English description, rendered into the session prompt layer
+    # Shown to learners where they pick a teacher (the app's teacher_personas.description_vi);
+    # never part of the prompt.
+    description_vi: str = ""
     address: dict[AgeBand, Address]  # keyed by the learner's age band
     # Fixed Vietnamese line played when the learner switches to this teacher; a template with
-    # {teacher}/{learner} ({Teacher}/{Learner} capitalised) so it fits every learner age band.
+    # {teacher}/{learner} ({Teacher}/{Learner} capitalised) and {name} so it fits every learner
+    # age band.
     switch_greeting: str
-    fillers: dict[str, list[str]] = Field(default_factory=dict)  # voice channel only
+    # Voice channel only: fixed Vietnamese templates by FILLER_CONTEXTS, 3-5 lines each. A
+    # filler never hints at a result ("Đúng rồi", "Giỏi lắm").
+    fillers: dict[str, list[str]] = Field(default_factory=dict)
     voice_id: str | None = None
     status: Literal["draft", "published"] = "published"
 
     @field_validator("switch_greeting")
     @classmethod
     def _known_placeholders(cls, value: str) -> str:
-        names = {name for _, name, _, _ in Formatter().parse(value) if name is not None}
-        if not names <= ADDRESS_FIELDS:
-            raise ValueError(f"unknown placeholders {sorted(names - ADDRESS_FIELDS)}")
+        return _check_template(value)
+
+    @field_validator("fillers")
+    @classmethod
+    def _known_filler_contexts(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        unknown = sorted(set(value) - FILLER_CONTEXTS)
+        if unknown:
+            raise ValueError(f"unknown filler contexts {unknown}")
+        low, high = FILLERS_PER_CONTEXT
+        for context, lines in value.items():
+            if not low <= len(lines) <= high:
+                raise ValueError(f"{context}: {len(lines)} fillers, expected {low}-{high}")
+            for line in lines:
+                _check_template(line)
         return value
 
 

@@ -8,7 +8,12 @@ Pipecat voice bot calls for voice. The app itself holds no AI code.
 - **Text in, text out.** Audio, STT and TTS stay in the voice bot.
 - **Channels:** `text` (implemented), `voice` (planned: parser and tool schemas are ready, the
   voice prompt is not). **Modes:** `scenario` and `free_chat` (implemented), `lesson` (planned).
-- **Teachers:** several personas (age, gender, personality); pronouns adapt to the learner's age.
+- **Teachers:** 16 personas in `src/english_tutor/data/personas.yaml` that differ in teaching
+  style, age, gender and background; pronouns and the teacher's title adapt to the learner's
+  age. Backgrounds were drawn up with reference to
+  [Nemotron-Personas-Vietnam](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Vietnam)
+  (NVIDIA, FPT Smart Cloud, FPT Quantum AI & Cyber Security Institute; CC BY 4.0); no record
+  was copied.
 - **Models:** all calls go through [OpenRouter](https://openrouter.ai) with the Anthropic SDK
   (Haiku 5.5 primary, GPT-6 Luna as hedged fallback).
 - **Data:** the app's Postgres database (Neon). The app's Alembic migrations own the schema;
@@ -175,6 +180,8 @@ model on OpenRouter, no fallback) and grade the replies in two layers:
 uv run python -m english_tutor.evals.run_eval run                       # 50 cases, about $0.02
 uv run python -m english_tutor.evals.run_eval run --filter fc-          # a subset
 uv run python -m english_tutor.evals.run_eval run --repeat 3            # every case 3 times, ~$0.035
+uv run python -m english_tutor.evals.run_eval run --filter fc-past-tense,sc-cafe --persona thu,duc
+                                                                         # cases with other teachers
 # let a judge write eval_runs/<run>/judge_scores.jsonl, then:
 uv run python -m english_tutor.evals.run_eval report eval_runs/<run> --baseline eval_runs/<older run>
 ```

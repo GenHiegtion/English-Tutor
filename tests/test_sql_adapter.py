@@ -146,7 +146,7 @@ async def test_learner_profile_comes_from_users(stores):
 
 async def test_catalogs_come_from_app_tables(engine):
     personas = SqlPersonaStore(engine)
-    assert {p.id for p in await personas.list_personas()} == {"lan", "minh", "hung", "chi"}
+    assert {p.id for p in await personas.list_personas()} == {p.id for p in load_seed_personas()}
     scenario_store = SqlScenarioStore(engine)
     assert (await scenario_store.get_scenario("cafe-order")).goal_vi
     assert await scenario_store.get_scenario("nope") is None
@@ -166,7 +166,8 @@ async def test_catalogs_skip_unpublished_and_invalid_rows(engine):
             update(scenarios).where(scenarios.c.id == "job-interview").values(active=False)
         )
     personas = SqlPersonaStore(engine)
-    assert {p.id for p in await personas.list_personas()} == {"lan", "chi"}
+    published = {p.id for p in load_seed_personas()} - {"minh", "hung"}
+    assert {p.id for p in await personas.list_personas()} == published
     assert (await personas.get_persona("minh")).status == "draft"
     assert await personas.get_persona("hung") is None
     ids = {s.id for s in await SqlScenarioStore(engine).list_scenarios()}

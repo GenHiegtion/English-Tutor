@@ -2,13 +2,14 @@ import json
 
 import pytest
 
-from english_tutor.evals.cases import EvalCase, load_cases
+from english_tutor.evals.cases import EvalCase, find_case, load_cases, with_personas
 from english_tutor.evals.judges import (
     CaseResult,
     CheckOutcome,
     JudgeScore,
     MistakeOut,
     SegmentOut,
+    build_judge_prompt,
     check_case,
     load_judge_scores,
 )
@@ -265,3 +266,35 @@ def test_regressions_compare_pass_rates_across_repeat_counts():
     assert regressions(runs, {}, [ok], {}) == []  # 1/1 -> 2/3 is noise, not a regression
     worse = [bad.model_copy(update={"run": i}) for i in range(2)] + [runs[0]]
     assert regressions(worse, {}, [ok], {}) == ["- `c1`: passed 1/1, now 1/3 (clean_output)"]
+
+
+def test_with_personas_runs_each_case_per_teacher_and_maps_ids_back(tmp_path):
+    base = case(id="fc1", judge=["conversation_flow"])
+    variants = with_personas([base], ["thu", "duc"])
+    assert [(c.id, c.persona) for c in variants] == [("fc1@thu", "thu"), ("fc1@duc", "duc")]
+    with pytest.raises(ValueError, match="ghost"):
+        with_personas([base], ["ghost"])
+
+    cases = {"fc1": base}
+    assert find_case(cases, "fc1@duc").persona == "duc"
+    assert find_case(cases, "fc1") is base
+    assert find_case(cases, "nope@duc") is None and find_case(cases, "fc1@") is None
+
+
+def test_load_run_rechecks_persona_variants(tmp_path):
+    r = result(id="fc-past-tense@duc", segments=[SegmentOut(lang="en", text="Hi")])
+    (tmp_path / RESULTS).write_text(r.model_dump_json() + "\n", encoding="utf-8")
+    (tmp_path / JUDGE_SCORES).write_text(
+        '{"id": "fc-past-tense@duc", "scores": {"correction_quality": 4}}\n', encoding="utf-8"
+    )
+    results, scores = load_run(tmp_path)
+    assert results[0].checks and scores["fc-past-tense@duc"].scores["correction_quality"] == 4
+
+
+def test_judge_prompt_gives_each_teacher_its_own_pronouns(tmp_path):
+    kid = case(id="k1", age_band="under_18", judge=["natural_vietnamese"], notes="pronouns cô/em")
+    variants = with_personas([kid], ["khoa", "duc"])
+    pairs = [(c, result(id=c.id, persona=c.persona)) for c in variants]
+    prompt = build_judge_prompt(pairs, tmp_path / JUDGE_SCORES)
+    assert 'the teacher says "anh", the learner is "em"' in prompt
+    assert 'the teacher says "ông", the learner is "cháu"' in prompt

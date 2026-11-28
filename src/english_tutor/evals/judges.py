@@ -15,9 +15,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
+from english_tutor.adapters.memory import load_seed_personas
 from english_tutor.evals.cases import EvalCase
 from english_tutor.teacher.guards import vi_ratio
 from english_tutor.teacher.parser import Segment
+from english_tutor.teacher.persona import compute_address
 
 # Guard flags that fail any case: broken output, wrong pronouns, bad tools, blocked content.
 HARD_FAIL_FLAGS = frozenset(
@@ -218,6 +220,7 @@ def _render_reply(result: CaseResult) -> str:
 def build_judge_prompt(pairs: list[tuple[EvalCase, CaseResult]], scores_path: Path) -> str:
     """One markdown document: instructions, then every case that has rubric items."""
     blocks = [judge_instructions(), "", f"Write the scores to: `{scores_path}`", "", "# Cases"]
+    personas = {p.id: p for p in load_seed_personas()}
     for case, result in pairs:
         if not case.judge or result.failed:
             continue
@@ -232,6 +235,14 @@ def build_judge_prompt(pairs: list[tuple[EvalCase, CaseResult]], scores_path: Pa
             f"Context: {context}.",
             f"Score these items: {', '.join(case.judge)}",
         ]
+        if case.persona in personas:
+            # The notes are written for the case's default teacher; with --persona the pronouns
+            # change with the teacher, so the judge gets this teacher's own pair.
+            address = compute_address(personas[case.persona], case.age_band)
+            blocks.append(
+                f'Pronouns for this teacher and learner: the teacher says "{address.teacher}", '
+                f'the learner is "{address.learner}". They override any pronouns named below.'
+            )
         if case.notes:
             blocks.append(f"What the case tests: {case.notes}")
         if history:

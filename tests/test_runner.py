@@ -228,7 +228,7 @@ async def test_persona_switch_updates_snapshot_and_greets(stores, scenario):
     await open_session(service, scenario)
     await collect(service, turn_ctx("t1", "hi", scenario=scenario))
     events = await collect(service, turn_ctx("t2", "hello", persona_id="hung", scenario=scenario))
-    assert events[0].text == "Chào bạn, tôi là thầy Hùng. Chúng ta tiếp tục từ chỗ đang học nhé."
+    assert events[0].text == "Chào bạn, tôi là Hùng. Chúng ta tiếp tục từ chỗ đang học nhé."
     snap = await stores[0].load_session("s1")
     assert snap.persona_id == "hung" and snap.address.teacher == "tôi"
     req = provider.requests[1]

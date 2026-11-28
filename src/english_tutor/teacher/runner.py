@@ -58,7 +58,7 @@ from english_tutor.teacher.history import (
 )
 from english_tutor.teacher.input_checks import check_input
 from english_tutor.teacher.parser import LangTagParser, Segment
-from english_tutor.teacher.persona import compute_address, spoken_name
+from english_tutor.teacher.persona import compute_address, persona_line, spoken_name
 from english_tutor.teacher.tools import (
     RecordMistakeArgs,
     ShowBoardArgs,
@@ -204,7 +204,7 @@ class TeacherService:
         switch_note = None
         if ctx.persona_id != snapshot.persona_id:
             switch_note = await self._switch_persona(turn)
-            greeting = turn.snapshot.address.fill(persona.switch_greeting)
+            greeting = persona_line(persona, turn.snapshot.address, persona.switch_greeting)
             yield self._segment_event(turn, "vi", greeting)
 
         if ctx.learner_input is None:
