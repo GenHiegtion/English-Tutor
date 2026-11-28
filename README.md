@@ -67,7 +67,7 @@ The OpenAPI docs at `/docs` (and `/openapi.json`) are the contract for both call
 | `GET /personas` | published teachers | web, bot |
 | `GET /scenarios` | active role-play scenarios | web, bot |
 | `POST /sessions` | open a session (teacher, mode, scenario); the learner profile comes from `users` | web, bot |
-| `POST /sessions/{id}/turns` | one teacher turn, streamed as Server-Sent Events | web, bot |
+| `POST /sessions/{id}/turns` | one teacher turn, streamed as Server-Sent Events; without `text` the teacher opens the session | web, bot |
 | `POST /sessions/{id}/turns/{turn_id}/delivered` | last segment the learner received | bot, web |
 | `GET /sessions/{id}/messages` | the conversation as the learner saw it | web |
 | `POST /sessions/{id}/end` | close the session | web, bot |
@@ -174,13 +174,16 @@ model on OpenRouter, no fallback) and grade the replies in two layers:
 ```bash
 uv run python -m english_tutor.evals.run_eval run                       # 50 cases, about $0.02
 uv run python -m english_tutor.evals.run_eval run --filter fc-          # a subset
+uv run python -m english_tutor.evals.run_eval run --repeat 3            # every case 3 times, ~$0.035
 # let a judge write eval_runs/<run>/judge_scores.jsonl, then:
 uv run python -m english_tutor.evals.run_eval report eval_runs/<run> --baseline eval_runs/<older run>
 ```
 
 Runs land in `eval_runs/` (gitignored). `report` re-applies the current rule checks, so an older
-baseline stays comparable; with `--baseline` it lists cases that newly fail or lost a judge point.
-Each case runs once, so a single run can move by a case or two from model randomness.
+baseline stays comparable; with `--baseline` it lists cases whose pass rate fell by half or more
+or that lost a judge point. One run per case moves by a case or two from model randomness, so
+compare prompt changes with `--repeat 3`: the report then gives each case's pass rate, lists the
+flaky cases and shows any text the model wrote outside the tags. The judge scores the first run.
 
 New cases can be drafted from real sessions with a read-only export (reads
 `DATABASE_URL`, sends only SELECTs):

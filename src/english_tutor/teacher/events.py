@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 
 class OutputSegment(BaseModel):
@@ -54,6 +55,9 @@ class TurnEnd(BaseModel):
     cache_read_tokens: int
     cache_write_tokens: int
     dropped_chars: int
+    # The first runs of text written outside the tags: for evals and debugging only. It may echo
+    # the learner's words, so it is never sent to the client and is not part of the schema.
+    dropped_samples: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
     guard_flags: list[str]
     provider: str
     fallback_used: bool

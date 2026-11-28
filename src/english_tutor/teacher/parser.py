@@ -20,6 +20,7 @@ MAX_TAG_BODY = 16  # no `>` within this many chars: the `<` is plain text
 PROTECTED_MAX_WORDS = 12
 EN_AS_VI_RATIO = 0.5
 MAX_DROPPED_SAMPLES = 3
+MAX_DROPPED_SAMPLE_CHARS = 80
 
 ABBREVIATIONS = frozenset(
     {"mr", "mrs", "ms", "dr", "st", "vs", "etc", "e.g", "i.e", "a.m", "p.m", "u.s", "tp"}
@@ -147,8 +148,8 @@ class LangTagParser:
             if not c.isspace():
                 self.dropped_chars += 1
                 self._dropped_run += c
-            else:
-                self._close_dropped_run()
+            elif self._dropped_run and not self._dropped_run.endswith(" "):
+                self._dropped_run += " "  # a run lasts until the next tag: keep whole phrases
             return
 
         if self._run_start is not None:
@@ -164,8 +165,9 @@ class LangTagParser:
         self._enforce_max_buffer(out)
 
     def _close_dropped_run(self) -> None:
-        if self._dropped_run and len(self.dropped_samples) < MAX_DROPPED_SAMPLES:
-            self.dropped_samples.append(self._dropped_run[:40])
+        sample = self._dropped_run.strip()
+        if sample and len(self.dropped_samples) < MAX_DROPPED_SAMPLES:
+            self.dropped_samples.append(sample[:MAX_DROPPED_SAMPLE_CHARS])
         self._dropped_run = ""
 
     def _resolve_run(self, next_char: str, out: list[Segment]) -> None:

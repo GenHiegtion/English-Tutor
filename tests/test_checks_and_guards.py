@@ -205,3 +205,22 @@ def test_tool_args_validation_and_channel_rules():
     spoken = {"type": "pronunciation", "original": "a", "corrected": "b", "explanation_vi": "c"}
     assert validate_args("record_mistake", spoken, "text")[1] == "type"
     assert validate_args("ask_question", {"question": "?"}, "text")[1] == "expected_structure"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('"how much" là gì vậy?', True),
+        ("e ko biet noi the nao ve so thich cua minh", True),
+        ("Tại sao phải dùng went?", True),
+        ("I want one coffee and a cake please.", False),
+        (
+            "Can I have a cà phê sữa đá, please?",
+            False,
+        ),  # an English sentence with a Vietnamese word
+        ("I'd like a café latte", False),
+        ("", False),
+    ],
+)
+def test_looks_vietnamese(text, expected):
+    assert guards.looks_vietnamese(text) is expected

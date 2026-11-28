@@ -1,8 +1,10 @@
 # Seed teachers. Real teachers live in the `teacher_personas` table; this file mirrors that shape
-# so the same rows can be inserted at merge time. switch_greeting is a template: {teacher} and
-# {learner} ({Teacher}/{Learner} capitalised) become the pronouns for the learner's age band.
+# so the same rows can be inserted at merge time. `name` is the given name only ("Lan", not
+# "Cô Lan"): the title depends on the learner's age band and comes from `address`.
+# switch_greeting is a template: {teacher} and {learner} ({Teacher}/{Learner} capitalised)
+# become the pronouns for the learner's age band.
 - id: lan
-  name: Cô Lan
+  name: Lan
   gender: female
   age_band: adult
   personality: >-
@@ -16,7 +18,7 @@
   switch_greeting: "Chào {learner}, {teacher} là Lan đây. {Teacher} và {learner} học tiếp từ chỗ vừa dừng nhé."
 
 - id: minh
-  name: Anh Minh
+  name: Minh
   gender: male
   age_band: adult
   personality: >-
@@ -30,7 +32,7 @@
   switch_greeting: "Chào {learner}, {teacher} là Minh đây! {Teacher} và {learner} học tiếp luôn nhé."
 
 - id: hung
-  name: Thầy Hùng
+  name: Hùng
   gender: male
   age_band: senior
   personality: >-
@@ -44,7 +46,7 @@
   switch_greeting: "Chào {learner}, {teacher} là thầy Hùng. Chúng ta tiếp tục từ chỗ đang học nhé."
 
 - id: chi
-  name: Chị Chi
+  name: Chi
   gender: female
   age_band: adult
   personality: >-

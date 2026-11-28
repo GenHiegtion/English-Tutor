@@ -85,6 +85,7 @@ def test_health_and_published_docs(client):
     assert "/sessions/{session_id}/end" in paths
     schema = client.get("/schema/events").json()
     assert "oneOf" in schema or "anyOf" in schema
+    assert "dropped_samples" not in json.dumps(schema)
 
 
 def test_docs_can_be_switched_off():
@@ -260,11 +261,14 @@ def test_turn_errors(client):
     assert too_long.status_code == 422
 
 
-def test_free_chat_needs_learner_text_first(client):
+def test_free_chat_opens_with_the_teacher_then_needs_learner_text(client):
     sid = open_session(client, mode="free_chat", scenario_id=None)
-    events = parse_sse(client.post(f"/sessions/{sid}/turns", json={}, headers=SERVICE).text)
-    assert events == [("turn_failed", events[0][1])]
-    assert events[0][1]["reason"] == "invalid_context"
+    opener = parse_sse(client.post(f"/sessions/{sid}/turns", json={}, headers=SERVICE).text)
+    assert [kind for kind, _ in opener][-2:] == ["terminal", "turn_end"]
+    assert opener[-3][0] == "segment" and opener[-3][1]["text"].endswith("?")
+    again = parse_sse(client.post(f"/sessions/{sid}/turns", json={}, headers=SERVICE).text)
+    assert again == [("turn_failed", again[0][1])]
+    assert again[0][1]["reason"] == "invalid_context"
 
 
 def test_delivered_for_a_finished_turn_is_accepted_and_ignored(client):

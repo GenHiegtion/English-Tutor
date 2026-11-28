@@ -2,16 +2,18 @@
 
 Usage::
 
-    uv run python -m english_tutor.evals.run_eval run [--filter TEXT] [--out DIR] [--concurrency N]
+    uv run python -m english_tutor.evals.run_eval run [--filter TEXT] [--repeat N] [--out DIR]
     uv run python -m english_tutor.evals.run_eval report RUN_DIR [--baseline RUN_DIR]
 
 ``run`` sends every case through ``TeacherService`` with the configured teacher model
-(``ENGLISH_TUTOR_TEACHER_MODEL``) and no fallback, so results belong to that model alone. It
-writes to the run directory (default ``eval_runs/<timestamp>``):
+(``ENGLISH_TUTOR_TEACHER_MODEL``) and no fallback, so results belong to that model alone.
+``--repeat N`` runs every case N times: one run per case is noisy, so the report gives each
+case's pass rate. It writes to the run directory (default ``eval_runs/<timestamp>``):
 
-- ``results.jsonl``: one ``CaseResult`` per case (reply, corrections, flags, cost, rule checks);
-- ``judge_prompt.md``: instructions and cases for the LLM judge, which writes
-  ``judge_scores.jsonl`` next to it;
+- ``results.jsonl``: one ``CaseResult`` per case and run (reply, corrections, flags, text
+  written outside the tags, cost, rule checks);
+- ``judge_prompt.md``: instructions and cases for the LLM judge (first run of each case only),
+  which writes ``judge_scores.jsonl`` next to it;
 - ``report.md``: metrics, failed cases and, with ``--baseline``, regressions.
 
 ``report`` rebuilds ``report.md`` after the judge has written its scores.
@@ -62,14 +64,15 @@ RESULTS = "results.jsonl"
 JUDGE_PROMPT = "judge_prompt.md"
 JUDGE_SCORES = "judge_scores.jsonl"
 REPORT = "report.md"
-JUDGE_PASS = 4  # a judged item passes at 4/5 or more (PLAN threshold)
+JUDGE_PASS = 4  # a judged item passes at 4/5 or more
+REGRESSION_DROP = 0.5  # a case regresses when its pass rate falls by this much or more
 
 
 # ------------------------------------------------------------------------------- run
 async def run_case(
-    service: TeacherService, learners: MemoryLearnerStore, case: EvalCase
+    service: TeacherService, learners: MemoryLearnerStore, case: EvalCase, run: int = 0
 ) -> CaseResult:
-    """One case in a fresh session: open, scenario opener, seeded history, then the case turn."""
+    """One case in a fresh session: open, the opener turn, seeded history, then the case turn."""
     scenarios = {s.id: s for s in load_seed_scenarios()}
     scenario = scenarios[case.scenario] if case.scenario else None
     user_id = f"eval-{case.id}"
@@ -93,6 +96,7 @@ async def run_case(
         cefr=case.cefr,
         persona=case.persona,
         learner=case.learner,
+        run=run,
         model=service.primary.model_for("teacher"),
         prompt_version=snapshot.prompt_version,
         reviewed=case.reviewed_by != "PLACEHOLDER",
@@ -111,9 +115,8 @@ async def run_case(
             received_at=0.0,
         )
 
-    if scenario is not None:
-        async for _ in service.run_turn(ctx("opener", None)):
-            pass
+    async for _ in service.run_turn(ctx("opener", None)):  # as in a real session
+        pass
     for i, turn in enumerate(case.history):
         user = Message(
             role="user", content=[TextPart(text=f"{LEARNER_PREFIX[case.channel]} {turn.learner}")]
@@ -150,6 +153,7 @@ async def run_case(
             result.terminal, result.terminal_args = event.tool, event.args
         elif isinstance(event, TurnEnd):
             result.flags, result.ttft_ms = event.guard_flags, event.ttft_ms
+            result.dropped_samples = event.dropped_samples
         elif isinstance(event, TurnFailed):
             result.failed = event.reason
     history = service.history
@@ -161,21 +165,22 @@ async def run_case(
 
 
 async def run_cases(
-    cases: list[EvalCase], primary: LLMProvider, *, concurrency: int = 4
+    cases: list[EvalCase], primary: LLMProvider, *, concurrency: int = 4, repeat: int = 1
 ) -> list[CaseResult]:
-    """Run cases concurrently; every case gets its own history store (turn ids repeat)."""
+    """Run every case ``repeat`` times concurrently; each run gets its own history store."""
     semaphore = asyncio.Semaphore(concurrency)
     personas = MemoryPersonaStore.from_seed()
 
-    async def one(case: EvalCase) -> CaseResult:
+    async def one(case: EvalCase, run: int) -> CaseResult:
         learners = MemoryLearnerStore()
         service = TeacherService(
             primary=primary, history=MemoryHistoryStore(), personas=personas, learners=learners
         )
         async with semaphore:
-            return await run_case(service, learners, case)
+            return await run_case(service, learners, case, run)
 
-    return list(await asyncio.gather(*(one(c) for c in cases)))
+    runs = [one(c, run) for c in cases for run in range(repeat)]
+    return list(await asyncio.gather(*runs))
 
 
 def write_run(run_dir: Path, cases: list[EvalCase], results: list[CaseResult]) -> None:
@@ -184,7 +189,7 @@ def write_run(run_dir: Path, cases: list[EvalCase], results: list[CaseResult]) -
         for result in results:
             fh.write(result.model_dump_json() + "\n")
     by_id = {c.id: c for c in cases}
-    pairs = [(by_id[r.id], r) for r in results]
+    pairs = [(by_id[r.id], r) for r in results if r.run == 0]
     scores_path = (run_dir / JUDGE_SCORES).resolve()
     (run_dir / JUDGE_PROMPT).write_text(build_judge_prompt(pairs, scores_path), encoding="utf-8")
 
@@ -217,23 +222,42 @@ def _rate(results: list[CaseResult], prefix: str) -> tuple[int, int]:
     return sum(o.passed for o in outcomes), len(outcomes)
 
 
+def pass_rates(results: list[CaseResult]) -> dict[str, tuple[int, int]]:
+    """Runs passing every check and runs in total, per case id."""
+    rates: dict[str, tuple[int, int]] = {}
+    for r in results:
+        passed, total = rates.get(r.id, (0, 0))
+        rates[r.id] = (passed + r.passed, total + 1)
+    return rates
+
+
+def _failed_checks(results: list[CaseResult], case_id: str) -> list[str]:
+    names = {n for r in results if r.id == case_id for n, o in r.checks.items() if not o.passed}
+    return sorted(names)
+
+
 def regressions(
     current: list[CaseResult],
     scores: dict[str, JudgeScore],
     baseline: list[CaseResult],
     baseline_scores: dict[str, JudgeScore],
 ) -> list[str]:
-    """Cases that passed in the baseline and fail now, or lost a judge point or more."""
-    before = {r.id: r for r in baseline}
+    """Cases whose pass rate fell by half or more, or that lost a judge point or more.
+
+    Pass rates make runs with a different ``--repeat`` comparable.
+    """
+    before, now = pass_rates(baseline), pass_rates(current)
     lines = []
-    for result in current:
-        old = before.get(result.id)
-        if old is None:
+    for case_id, (passed, total) in now.items():
+        if case_id not in before:
             continue
-        if old.passed and not result.passed:
-            failed = [n for n, o in result.checks.items() if not o.passed]
-            lines.append(f"- `{result.id}`: rule checks now fail ({', '.join(failed)})")
-        new_s, old_s = scores.get(result.id), baseline_scores.get(result.id)
+        old_passed, old_total = before[case_id]
+        if old_passed / old_total - passed / total >= REGRESSION_DROP:
+            failed = ", ".join(_failed_checks(current, case_id))
+            lines.append(
+                f"- `{case_id}`: passed {old_passed}/{old_total}, now {passed}/{total} ({failed})"
+            )
+        new_s, old_s = scores.get(case_id), baseline_scores.get(case_id)
         if new_s and old_s:
             drops = [
                 f"{item} {old_s.scores[item]}→{value}"
@@ -241,7 +265,7 @@ def regressions(
                 if item in old_s.scores and old_s.scores[item] - value >= 1
             ]
             if drops:
-                lines.append(f"- `{result.id}`: judge {', '.join(drops)}")
+                lines.append(f"- `{case_id}`: judge {', '.join(drops)}")
     return lines
 
 
@@ -253,6 +277,8 @@ def render_report(
 ) -> str:
     total = len(results)
     passed = sum(r.passed for r in results)
+    rates = pass_rates(results)
+    repeat = max((t for _, t in rates.values()), default=1)
     ttfts = [r.ttft_ms for r in results if r.ttft_ms is not None]
     unreviewed = sum(not r.reviewed for r in results)
     models = sorted({r.model for r in results})
@@ -262,13 +288,24 @@ def render_report(
         "",
         f"- Model: {', '.join(models)}",
         f"- Prompts: {', '.join(versions)}",
-        f"- Cases: {total} ({unreviewed} not reviewed yet)",
+        f"- Cases: {len(rates)} × {repeat} runs ({unreviewed} runs of unreviewed cases)"
+        if repeat > 1
+        else f"- Cases: {total} ({unreviewed} not reviewed yet)",
         f"- Cost: ${sum(r.cost_usd for r in results):.4f}",
     ]
     if ttfts:
         p90 = statistics.quantiles(ttfts, n=10)[-1] if len(ttfts) >= 2 else ttfts[0]
         out.append(f"- TTFT: median {statistics.median(ttfts):.0f} ms, p90 {p90:.0f} ms")
-    out += ["", "## Rule checks", "", f"**Cases passing every check: {_pct(passed, total)}**", ""]
+    out += ["", "## Rule checks", ""]
+    if repeat > 1:
+        steady = sum(p == t for p, t in rates.values())
+        out += [
+            f"**Runs passing every check: {_pct(passed, total)}**",
+            f"**Cases passing in every run: {_pct(steady, len(rates))}**",
+            "",
+        ]
+    else:
+        out += [f"**Cases passing every check: {_pct(passed, total)}**", ""]
     for mode in sorted({r.mode for r in results}):
         subset = [r for r in results if r.mode == mode]
         out.append(f"- {mode}: {_pct(sum(r.passed for r in subset), len(subset))}")
@@ -285,6 +322,7 @@ def render_report(
         ("No correction of correct sentences", _rate(results, "no_correction"), "≥ 95%"),
         ("English within CEFR level", (flag_free("cefr_overshoot"), len(turns)), "≥ 95%"),
         ("Length within limit (no too_long)", (flag_free("too_long"), len(turns)), ""),
+        ("Wrote its own text (no question_only)", (flag_free("question_only"), len(turns)), ""),
     ]
     out += ["", "| Metric | Result | Target |", "| --- | --- | --- |"]
     out += [f"| {label} | {_pct(*rate)} | {target} |" for label, rate, target in metrics]
@@ -305,7 +343,11 @@ def render_report(
         out += ["", "## Failed rule checks", ""]
         for r in failing:
             details = "; ".join(f"{n}: {o.detail}" for n, o in r.checks.items() if not o.passed)
-            out.append(f"- `{r.id}`: {details}")
+            out.append(f"- `{_label(r, repeat)}`: {details}")
+    flaky = {i: rate for i, rate in rates.items() if 0 < rate[0] < rate[1]}
+    if flaky:
+        out += ["", "## Flaky cases (pass in some runs only)", ""]
+        out += [f"- `{i}`: {p}/{t}" for i, (p, t) in sorted(flaky.items())]
     weak = [s for s in scores.values() if any(v < JUDGE_PASS for v in s.scores.values())]
     if weak:
         out += ["", "## Judge findings (items below 4)", ""]
@@ -318,14 +360,20 @@ def render_report(
     out += ["", "## Replies", ""]
     for r in results:
         mark = "PASS" if r.passed else "FAIL"
-        out.append(f"### {r.id} ({mark})")
+        out.append(f"### {_label(r, repeat)} ({mark})")
         out.append(f"Learner ({r.cefr}): {r.learner}")
         out.append("")
         out += [f"- [{s.lang}] {s.text}" for s in r.segments] or ["- (no reply)"]
         out += [f"- {{mistake {m.type}: {m.original} -> {m.corrected}}}" for m in r.mistakes]
         out.append(f"- {{{r.terminal}}} flags: {', '.join(r.flags) or 'none'}")
+        if r.dropped_samples:
+            out.append(f"- outside tags: {r.dropped_samples}")
         out.append("")
     return "\n".join(out)
+
+
+def _label(result: CaseResult, repeat: int) -> str:
+    return f"{result.id}#{result.run + 1}" if repeat > 1 else result.id
 
 
 def write_report(run_dir: Path, baseline_dir: Path | None) -> str:
@@ -353,9 +401,14 @@ async def _run(args: argparse.Namespace) -> int:
     if not cases:
         print(f"no case id contains {args.filter!r}", file=sys.stderr)
         return 2
+    if args.repeat < 1:
+        print("--repeat must be at least 1", file=sys.stderr)
+        return 2
     run_dir = args.out or RUNS_DIR / datetime.now().strftime("%Y%m%d-%H%M%S")
-    print(f"running {len(cases)} cases -> {run_dir}", file=sys.stderr)
-    results = await run_cases(cases, OpenRouterProvider(), concurrency=args.concurrency)
+    print(f"running {len(cases)} cases × {args.repeat} -> {run_dir}", file=sys.stderr)
+    results = await run_cases(
+        cases, OpenRouterProvider(), concurrency=args.concurrency, repeat=args.repeat
+    )
     write_run(run_dir, cases, results)
     print(_summary(write_report(run_dir, args.baseline)))
     print(f"\nJudge next: {run_dir / JUDGE_PROMPT} -> {run_dir / JUDGE_SCORES}")
@@ -368,6 +421,7 @@ def main() -> None:
     run = sub.add_parser("run", help="run the cases against the real teacher model")
     run.add_argument("--filter", default="", help="only cases whose id contains this text")
     run.add_argument("--out", type=Path, default=None, help="run directory")
+    run.add_argument("--repeat", type=int, default=1, help="runs per case (default 1)")
     run.add_argument("--concurrency", type=int, default=4)
     run.add_argument("--baseline", type=Path, default=None, help="earlier run to compare with")
     report = sub.add_parser("report", help="rebuild report.md (after the judge scored)")

@@ -148,7 +148,8 @@ def test_long_buffer_cut_at_comma_then_space():
 def test_text_outside_tags_is_dropped_and_counted():
     segs, p = run("junk<vi>Xin chào</vi>more junk")
     assert view(segs) == [("vi", "Xin chào")]
-    assert p.dropped_chars == len("junkmorejunk") and p.dropped_samples
+    assert p.dropped_chars == len("junkmorejunk")
+    assert p.dropped_samples == ["junk", "more junk"]  # whole phrases, one per run between tags
 
 
 def test_unknown_tags_dropped_keep_text():

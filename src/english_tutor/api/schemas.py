@@ -98,7 +98,10 @@ class CreateTurn(BaseModel):
         default=None,
         min_length=1,
         max_length=MAX_TEXT_CHARS,
-        description="Learner message. Omit only for the opening turn of a 'scenario' session.",
+        description=(
+            "Learner message. Omit it only for the first turn of a session: the teacher opens "
+            "the 'scenario' or 'free_chat' session with fixed lines (no LLM call)."
+        ),
     )
     turn_id: str | None = Field(
         default=None,

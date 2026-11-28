@@ -215,7 +215,7 @@ def test_report_and_regressions():
     new_score = {"c1": JudgeScore(id="c1", scores={"conversation_flow": 3}, issues="ignores it")}
 
     lines = regressions([bad], new_score, [good], old_score)
-    assert any("rule checks now fail" in line for line in lines)
+    assert any("passed 1/1, now 0/1 (clean_output)" in line for line in lines)
     assert any("conversation_flow 5→3" in line for line in lines)
 
     report = render_report("run", [bad], new_score, lines)
@@ -233,3 +233,35 @@ def test_load_run_reads_results_and_optional_scores(tmp_path):
         '{"id": "fc-past-tense", "scores": {"correction_quality": 5}}\n', encoding="utf-8"
     )
     assert load_run(tmp_path)[1]["fc-past-tense"].scores["correction_quality"] == 5
+
+
+async def test_repeat_runs_every_case_and_judges_the_first_run_only(tmp_path):
+    c = case(id="fc1", judge=["conversation_flow"])
+    text = "<en>Nice!</en>"
+    provider = FakeProvider([reply(text, []), reply("junk<en>Nice!</en>", []), reply(text, [])])
+    results = await run_cases([c], provider, repeat=3, concurrency=1)
+
+    assert sorted(r.run for r in results) == [0, 1, 2]
+    noisy = next(r for r in results if r.dropped_samples)
+    assert noisy.dropped_samples == ["junk"] and not noisy.passed
+    assert "outside tags: ['junk']" in noisy.checks["clean_output"].detail
+
+    write_run(tmp_path, [c], results)
+    assert (tmp_path / JUDGE_PROMPT).read_text(encoding="utf-8").count("## fc1") == 1
+    report = render_report("run", results, {})
+    assert "Runs passing every check: 2/3" in report
+    assert "Cases passing in every run: 0/1" in report
+    assert "`fc1`: 2/3" in report and f"### fc1#{noisy.run + 1} (FAIL)" in report
+
+
+def test_regressions_compare_pass_rates_across_repeat_counts():
+    ok = result(segments=[SegmentOut(lang="en", text="Hi!")])
+    ok.checks = {"clean_output": CheckOutcome(passed=True)}
+    bad = ok.model_copy(deep=True)
+    bad.checks = {"clean_output": CheckOutcome(passed=False, detail="flags: format_leak")}
+    runs = [ok.model_copy(update={"run": 0}), bad.model_copy(update={"run": 1})]
+    runs.append(ok.model_copy(update={"run": 2}))
+
+    assert regressions(runs, {}, [ok], {}) == []  # 1/1 -> 2/3 is noise, not a regression
+    worse = [bad.model_copy(update={"run": i}) for i in range(2)] + [runs[0]]
+    assert regressions(worse, {}, [ok], {}) == ["- `c1`: passed 1/1, now 1/3 (clean_output)"]

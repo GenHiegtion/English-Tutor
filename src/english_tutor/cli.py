@@ -121,10 +121,7 @@ async def _chat(args: argparse.Namespace) -> int:
         async for event in service.run_turn(ctx):
             _show(event)
 
-    if mode == "scenario":
-        await run(None)  # scenario opener, no LLM call
-    else:
-        print(f"{DIM}Free chat: say anything to start.{RESET}")
+    await run(None)  # the teacher opens the session with fixed lines, no LLM call
     loop = asyncio.get_running_loop()
     while True:
         try:

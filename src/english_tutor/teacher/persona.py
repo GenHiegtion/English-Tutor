@@ -6,6 +6,8 @@ from english_tutor.models import Address, AgeBand, CefrLevel, LearnerProfile, Pe
 from english_tutor.teacher.context import ScenarioRef
 
 DEFAULT_ADDRESS = Address(teacher="mình", learner="bạn")
+# Vietnamese pronouns that are also titles: a teacher who calls themself "cô" says "cô Lan".
+TITLE_PRONOUNS = frozenset({"cô", "thầy", "anh", "chị", "chú", "bác", "dì", "cậu"})
 
 # Target share of Vietnamese words by learner level.
 AGE_LABELS: dict[str, str] = {
@@ -14,6 +16,17 @@ AGE_LABELS: dict[str, str] = {
     "senior": "older adult",
 }
 VI_TARGET_PCT: dict[CefrLevel, int] = {"A1": 70, "A2": 50, "B1": 35, "B2": 20, "C1": 10, "C2": 10}
+# Repeated in the session block, next to the level, where the model weighs it most.
+VI_USE_BY_LEVEL: dict[CefrLevel, str] = {
+    "A1": "Use Vietnamese for explanations and short hints; keep English very simple.",
+    "A2": "Use Vietnamese for explanations; react and ask in simple English.",
+    "B1": "Use Vietnamese only for a short correction; everything else is in English.",
+    "B2": "Use Vietnamese only for a short correction; everything else is in English.",
+    "C1": "Use English for everything, corrections included, unless the learner writes in "
+    "Vietnamese.",
+    "C2": "Use English for everything, corrections included, unless the learner writes in "
+    "Vietnamese.",
+}
 MAX_WORDS_PER_SENTENCE: dict[CefrLevel, int | None] = {
     "A1": 8,
     "A2": 12,
@@ -31,6 +44,25 @@ def compute_address(persona: Persona, learner_age_band: AgeBand) -> Address:
     )
 
 
+def given_name(persona: Persona) -> str:
+    """The teacher's name without a leading title ("Cô Lan" -> "Lan").
+
+    Titles depend on who the learner is, so they come from the address, never from the name.
+    Older rows may still store the title in the name.
+    """
+    words = persona.name.split()
+    while len(words) > 1 and words[0].lower() in TITLE_PRONOUNS:
+        words.pop(0)
+    return " ".join(words)
+
+
+def spoken_name(persona: Persona, address: Address) -> str:
+    """How the teacher says their own name to this learner: "cô Lan" to a child, "Lan" else."""
+    name = given_name(persona)
+    teacher = address.teacher.lower()
+    return f"{teacher} {name}" if teacher in TITLE_PRONOUNS else name
+
+
 def render_session_block(
     persona: Persona,
     address: Address,
@@ -42,15 +74,17 @@ def render_session_block(
         "# SESSION",
         "",
         "## Your persona",
-        f"Name: {persona.name} ({persona.gender}).",
+        f"Name: {given_name(persona)} ({persona.gender}).",
         f"Personality: {persona.personality.strip()}",
         f'Pronouns in Vietnamese: you call yourself "{address.teacher}" and call the learner '
         f'"{address.learner}".',
+        f'When you say your own name, say "{spoken_name(persona, address)}", with no other title.',
         "Personality only changes your tone, never the teaching rules above.",
         "",
         "## The learner",
         f"CEFR level: {learner.cefr}.",
-        f"Target share of Vietnamese words: about {VI_TARGET_PCT[learner.cefr]}%.",
+        f"Target share of Vietnamese words: about {VI_TARGET_PCT[learner.cefr]}%. "
+        + VI_USE_BY_LEVEL[learner.cefr],
     ]
     if learner.age_band in AGE_LABELS:
         lines.append(f"Age group: {AGE_LABELS[learner.age_band]}.")

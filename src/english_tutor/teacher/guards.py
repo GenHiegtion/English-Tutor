@@ -36,6 +36,14 @@ _COMPOUND_RE = re.compile(
     r"bạn bè|bạn học|bạn cùng lớp|bạn thân|bạn trai|bạn gái|người bạn|kết bạn|chúng tôi", re.I
 )
 _SENTENCE_END_RE = re.compile(r"[.!?…]+(\s|$)")
+_WORD_RE = re.compile(r"[^\W\d_]+")
+# Vietnamese written without diacritics; none of these is a common English word.
+_PLAIN_VIETNAMESE = (
+    "ko khong dc duoc gi vay sao nghia biet noi minh toi lam nhu nao cua voi ve thich nhe nha roi "
+    "chua giup hieu tieng viet"
+)
+_PLAIN_VIETNAMESE_WORDS = frozenset(_PLAIN_VIETNAMESE.split())
+VIETNAMESE_WORD_SHARE = 0.5  # more than half the words
 _SMALL_NUMBERS = (
     "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
     "fifteen sixteen seventeen eighteen nineteen twenty"
@@ -104,6 +112,15 @@ def check_segment(segment: Segment) -> BlockResult:
     if text != segment.text:
         segment = Segment(**{**segment.__dict__, "text": text})
     return BlockResult(segment, flags)
+
+
+def looks_vietnamese(text: str) -> bool:
+    """Whether a learner message is mostly Vietnamese (with or without diacritics)."""
+    words = _WORD_RE.findall(_nfc(text).lower())
+    if not words:
+        return False
+    vietnamese = sum(not w.isascii() or w in _PLAIN_VIETNAMESE_WORDS for w in words)
+    return vietnamese / len(words) > VIETNAMESE_WORD_SHARE
 
 
 def vi_ratio(segments: list[Segment]) -> float | None:
