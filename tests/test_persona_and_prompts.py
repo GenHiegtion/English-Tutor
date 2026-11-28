@@ -1,13 +1,14 @@
 import pytest
 
 from english_tutor.adapters.memory import MemoryPersonaStore, load_seed_scenarios
-from english_tutor.models import LearnerProfile, Persona, SessionSnapshot
+from english_tutor.models import FILLER_CONTEXTS, LearnerProfile, Persona, SessionSnapshot
 from english_tutor.prompts.builder import build_system
 from english_tutor.prompts.registry import static_bundle
 from english_tutor.teacher.persona import (
     DEFAULT_ADDRESS,
     compute_address,
     given_name,
+    persona_line,
     render_session_block,
     spoken_name,
 )
@@ -32,22 +33,36 @@ def snapshot(user, persona, *, age="adult", cefr="A2", name=None):
 
 
 def test_seed_personas_are_valid_and_complete():
-    assert set(PERSONAS) == {"lan", "minh", "hung", "chi"}
+    assert {"lan", "minh", "hung", "chi"} <= set(PERSONAS) and len(PERSONAS) >= 12
     for persona in PERSONAS.values():
         assert set(persona.address) == {"under_18", "adult", "senior", "unknown"}
+        assert persona.name == given_name(persona), f"{persona.id}: no title in the name"
+        assert persona.status == "published" and persona.personality.isascii()
+        assert persona.description_vi and not persona.description_vi.isascii(), persona.id
 
 
 @pytest.mark.parametrize(
     ("persona", "age", "expected"),
     [
-        ("lan", "under_18", "Chào em, cô là Lan đây. Cô và em học tiếp từ chỗ vừa dừng nhé."),
+        ("lan", "under_18", "Chào em, cô là cô Lan đây. Cô và em học tiếp từ chỗ vừa dừng nhé."),
         ("lan", "adult", "Chào bạn, mình là Lan đây. Mình và bạn học tiếp từ chỗ vừa dừng nhé."),
         ("minh", "senior", "Chào bác, cháu là Minh đây! Cháu và bác học tiếp luôn nhé."),
+        ("hung", "under_18", "Chào em, thầy là thầy Hùng. Chúng ta tiếp tục từ chỗ đang học nhé."),
+        ("hung", "adult", "Chào bạn, tôi là Hùng. Chúng ta tiếp tục từ chỗ đang học nhé."),
     ],
 )
 def test_switch_greeting_follows_the_learner_age_band(persona, age, expected):
     p = PERSONAS[persona]
-    assert compute_address(p, age).fill(p.switch_greeting) == expected
+    assert persona_line(p, compute_address(p, age), p.switch_greeting) == expected
+
+
+def test_no_seed_greeting_hard_codes_a_title_or_the_name():
+    for persona in PERSONAS.values():
+        for age in ("under_18", "adult", "senior", "unknown"):
+            address = compute_address(persona, age)
+            text = persona_line(persona, address, persona.switch_greeting)
+            assert text.count(given_name(persona)) == 1, f"{persona.id}/{age}: {text}"
+            assert f"{address.teacher} {address.teacher} " not in text.lower()
 
 
 @pytest.mark.parametrize(
@@ -59,6 +74,7 @@ def test_switch_greeting_follows_the_learner_age_band(persona, age, expected):
         ("minh", "senior", "Minh"),  # "cháu là Minh", never "cháu là Anh Minh"
         ("hung", "under_18", "thầy Hùng"),
         ("hung", "adult", "Hùng"),
+        ("duc", "under_18", "ông Đức"),
     ],
 )
 def test_the_teacher_says_their_name_with_the_title_of_the_address(persona, age, spoken):
@@ -77,8 +93,38 @@ def test_a_title_stored_in_the_name_is_not_repeated():
 
 
 def test_switch_greeting_rejects_unknown_placeholders():
-    data = PERSONAS["lan"].model_dump() | {"switch_greeting": "Chào {name}"}
-    with pytest.raises(ValueError, match="name"):
+    data = PERSONAS["lan"].model_dump() | {"switch_greeting": "Chào {nickname}"}
+    with pytest.raises(ValueError, match="nickname"):
+        Persona.model_validate(data)
+
+
+# A filler plays before the teacher has judged the answer, so it must not sound like a verdict.
+VERDICT_WORDS = ("đúng", "sai", "giỏi", "tốt lắm", "hay lắm", "chính xác", "tuyệt")
+
+
+def test_seed_fillers_cover_every_context_and_never_sound_like_a_verdict():
+    for persona in PERSONAS.values():
+        assert set(persona.fillers) == FILLER_CONTEXTS, persona.id
+        for context, lines in persona.fillers.items():
+            assert len(set(lines)) == len(lines), f"{persona.id}/{context}: duplicate filler"
+            for line in lines:
+                assert not any(w in line.lower() for w in VERDICT_WORDS), f"{persona.id}: {line}"
+                for age in ("under_18", "adult", "senior", "unknown"):
+                    text = persona_line(persona, compute_address(persona, age), line)
+                    assert "{" not in text and text[:1].isupper(), f"{persona.id}: {text}"
+
+
+@pytest.mark.parametrize(
+    ("fillers", "error"),
+    [
+        ({"cheering": ["a", "b", "c"]}, "unknown filler contexts"),
+        ({"silence": ["a", "b"]}, "expected 3-5"),
+        ({"silence": ["a", "b", "Chào {nickname}"]}, "nickname"),
+    ],
+)
+def test_fillers_reject_unknown_contexts_counts_and_placeholders(fillers, error):
+    data = PERSONAS["lan"].model_dump() | {"fillers": fillers}
+    with pytest.raises(ValueError, match=error):
         Persona.model_validate(data)
 
 

@@ -18,6 +18,7 @@ from english_tutor.models import AgeBand, CefrLevel
 
 CASES_DIR = Path(__file__).resolve().parent / "cases" / "teacher"
 PLACEHOLDER = "PLACEHOLDER"
+PERSONA_SEPARATOR = "@"  # "fc-past-tense@thu": case fc-past-tense taught by the teacher thu
 
 # Rubric items the judge may score; the definitions live in judge_instructions.md.
 RUBRIC_ITEMS = (
@@ -84,6 +85,29 @@ class EvalCase(BaseModel):
         if self.expect.en_only and self.expect.require_vi:
             raise ValueError(f"{self.id}: en_only conflicts with require_vi")
         return self
+
+
+def with_personas(cases: list[EvalCase], persona_ids: list[str]) -> list[EvalCase]:
+    """Every case once per teacher, with ids like ``fc-past-tense@thu``."""
+    known = {p.id for p in load_seed_personas()}
+    unknown = sorted(set(persona_ids) - known)
+    if unknown:
+        raise ValueError(f"unknown personas {unknown}")
+    return [
+        case.model_copy(update={"id": f"{case.id}{PERSONA_SEPARATOR}{pid}", "persona": pid})
+        for case in cases
+        for pid in persona_ids
+    ]
+
+
+def find_case(cases: dict[str, EvalCase], case_id: str) -> EvalCase | None:
+    """The case for a result id, including ids made by ``with_personas``."""
+    if case_id in cases:
+        return cases[case_id]
+    base, _, persona = case_id.partition(PERSONA_SEPARATOR)
+    if base not in cases or not persona:
+        return None
+    return cases[base].model_copy(update={"id": case_id, "persona": persona})
 
 
 def load_cases(directory: Path = CASES_DIR) -> list[EvalCase]:

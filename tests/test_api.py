@@ -12,6 +12,7 @@ from english_tutor.adapters.memory import (
     MemoryLearnerStore,
     MemoryPersonaStore,
     MemoryScenarioStore,
+    load_seed_personas,
 )
 from english_tutor.api.app import create_app, dev_app
 from english_tutor.api.settings import ApiSettings
@@ -129,7 +130,7 @@ def test_wrong_audience_is_rejected(client):
 
 def test_catalog_lists_wrapped_items(client):
     personas = client.get("/personas", headers=SERVICE).json()["items"]
-    assert {p["id"] for p in personas} == {"lan", "minh", "hung", "chi"}
+    assert {p["id"] for p in personas} == {p.id for p in load_seed_personas()}
     assert set(personas[0]) == {"id", "name", "gender", "age_band"}
     scenarios = client.get("/scenarios", headers={"X-API-Key": PIPECAT_KEY}).json()["items"]
     assert "cafe-order" in {s["id"] for s in scenarios}

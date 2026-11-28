@@ -7,7 +7,7 @@ from english_tutor.teacher.context import ScenarioRef
 
 DEFAULT_ADDRESS = Address(teacher="mình", learner="bạn")
 # Vietnamese pronouns that are also titles: a teacher who calls themself "cô" says "cô Lan".
-TITLE_PRONOUNS = frozenset({"cô", "thầy", "anh", "chị", "chú", "bác", "dì", "cậu"})
+TITLE_PRONOUNS = frozenset({"cô", "thầy", "anh", "chị", "chú", "bác", "dì", "cậu", "ông", "bà"})
 
 # Target share of Vietnamese words by learner level.
 AGE_LABELS: dict[str, str] = {
@@ -61,6 +61,11 @@ def spoken_name(persona: Persona, address: Address) -> str:
     name = given_name(persona)
     teacher = address.teacher.lower()
     return f"{teacher} {name}" if teacher in TITLE_PRONOUNS else name
+
+
+def persona_line(persona: Persona, address: Address, template: str) -> str:
+    """A fixed persona line (switch greeting, filler) for this learner, name included."""
+    return address.fill(template, name=spoken_name(persona, address))
 
 
 def render_session_block(

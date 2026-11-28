@@ -33,13 +33,14 @@ CONTENT_FIELDS = (
     "gender",
     "age_band",
     "personality",
+    "description_vi",
     "switch_greeting",
     "address",
     "fillers",
     "status",
 )
 
-# Every column the seed writes, as created by app migration 0030.
+# Every column the seed writes, as created by app migrations 0030 and 0032 (description_vi).
 _METADATA = MetaData()
 TEACHER_PERSONAS = Table(
     "teacher_personas",
@@ -50,6 +51,7 @@ TEACHER_PERSONAS = Table(
     Column("gender", String(10), nullable=False),
     Column("age_band", String(10), nullable=False),
     Column("personality", Text, nullable=False),
+    Column("description_vi", Text),
     Column("switch_greeting", Text, nullable=False),
     Column("address", JSON, nullable=False),
     Column("fillers", JSON, nullable=False),
@@ -67,6 +69,7 @@ def content(persona: Persona) -> dict[str, Any]:
         "gender": persona.gender,
         "age_band": persona.age_band,
         "personality": persona.personality,
+        "description_vi": persona.description_vi or None,
         "switch_greeting": persona.switch_greeting,
         "address": {band: a.model_dump() for band, a in persona.address.items()},
         "fillers": persona.fillers,

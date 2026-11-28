@@ -3,12 +3,14 @@
 Usage::
 
     uv run python -m english_tutor.evals.run_eval run [--filter TEXT] [--repeat N] [--out DIR]
+        [--persona ID,ID...]
     uv run python -m english_tutor.evals.run_eval report RUN_DIR [--baseline RUN_DIR]
 
 ``run`` sends every case through ``TeacherService`` with the configured teacher model
 (``ENGLISH_TUTOR_TEACHER_MODEL``) and no fallback, so results belong to that model alone.
 ``--repeat N`` runs every case N times: one run per case is noisy, so the report gives each
-case's pass rate. It writes to the run directory (default ``eval_runs/<timestamp>``):
+case's pass rate. ``--persona`` runs every case with each listed teacher (result ids like
+``fc-past-tense@thu``). It writes to the run directory (default ``eval_runs/<timestamp>``):
 
 - ``results.jsonl``: one ``CaseResult`` per case and run (reply, corrections, flags, text
   written outside the tags, cost, rule checks);
@@ -37,7 +39,7 @@ from english_tutor.adapters.memory import (
     MemoryPersonaStore,
     load_seed_scenarios,
 )
-from english_tutor.evals.cases import EvalCase, load_cases
+from english_tutor.evals.cases import EvalCase, find_case, load_cases, with_personas
 from english_tutor.evals.judges import (
     CaseResult,
     JudgeScore,
@@ -199,9 +201,10 @@ def load_run(run_dir: Path) -> tuple[list[CaseResult], dict[str, JudgeScore]]:
 
     Re-checking keeps an old baseline comparable after a rule or an ``expect`` block changes.
     """
-    cases = {c.id: c for c in load_cases()}
+    base = {c.id: c for c in load_cases()}
     lines = (run_dir / RESULTS).read_text(encoding="utf-8").splitlines()
     results = [CaseResult.model_validate_json(line) for line in lines if line.strip()]
+    cases = {r.id: case for r in results if (case := find_case(base, r.id)) is not None}
     for result in results:
         if result.id in cases:
             result.checks = check_case(cases[result.id], result)
@@ -397,10 +400,18 @@ async def _run(args: argparse.Namespace) -> int:
     from english_tutor.providers.openrouter_provider import OpenRouterProvider
 
     load_dotenv()
-    cases = [c for c in load_cases() if args.filter in c.id]
+    # A stray comma must not add an empty filter: "" matches every case and spends money.
+    wanted = [f.strip() for f in args.filter.split(",") if f.strip()] or [""]
+    cases = [c for c in load_cases() if any(f in c.id for f in wanted)]
     if not cases:
-        print(f"no case id contains {args.filter!r}", file=sys.stderr)
+        print(f"no case id contains any of {wanted}", file=sys.stderr)
         return 2
+    if args.persona:
+        try:
+            cases = with_personas(cases, [p.strip() for p in args.persona.split(",") if p.strip()])
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
     if args.repeat < 1:
         print("--repeat must be at least 1", file=sys.stderr)
         return 2
@@ -419,9 +430,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="run_eval", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="run the cases against the real teacher model")
-    run.add_argument("--filter", default="", help="only cases whose id contains this text")
+    run.add_argument(
+        "--filter",
+        default="",
+        help="only cases whose id contains this text (comma-separated: any of them)",
+    )
     run.add_argument("--out", type=Path, default=None, help="run directory")
     run.add_argument("--repeat", type=int, default=1, help="runs per case (default 1)")
+    run.add_argument(
+        "--persona", default="", help="teacher ids, comma-separated: run every case with each one"
+    )
     run.add_argument("--concurrency", type=int, default=4)
     run.add_argument("--baseline", type=Path, default=None, help="earlier run to compare with")
     report = sub.add_parser("report", help="rebuild report.md (after the judge scored)")

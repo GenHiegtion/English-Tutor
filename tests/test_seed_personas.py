@@ -44,19 +44,23 @@ async def all_rows(engine):
 
 async def test_dry_run_writes_nothing(engine):
     plan = await run_seed(engine, apply=False)
-    assert [line.split()[0] for line in plan] == ["insert"] * 4
+    assert [line.split()[0] for line in plan] == ["insert"] * len(load_seed_personas())
     assert await all_rows(engine) == {}
 
 
 async def test_apply_inserts_the_teachers_the_service_can_read(engine):
     await run_seed(engine, apply=True)
     rows = await all_rows(engine)
-    assert set(rows) == {"lan", "minh", "hung", "chi"}
+    assert set(rows) == {p.id for p in load_seed_personas()}
     assert {(r.version, r.status, r.reviewed_by) for r in rows.values()} == {
         (1, "published", "developers")
     }
+    assert all(r.description_vi for r in rows.values())  # for the app's teacher picker
+    # The service never reads description_vi (it is not part of the prompt): it works whether
+    # or not the app's migration 0032 has run.
     personas = await SqlPersonaStore(engine, ttl_s=0).list_personas()
-    assert {p.id: p for p in personas} == {p.id: p for p in load_seed_personas()}
+    seeded = {p.id: p.model_copy(update={"description_vi": ""}) for p in load_seed_personas()}
+    assert {p.id: p for p in personas} == seeded
 
 
 async def test_rerun_keeps_unchanged_and_updates_changed_rows(engine):
