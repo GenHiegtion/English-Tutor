@@ -387,3 +387,31 @@ async def test_the_fixed_opener_does_not_count_for_the_vi_ratio(stores, scenario
     await collect(service, turn_ctx("t0", None, scenario=scenario))  # a Vietnamese intro line
     events = await collect(service, turn_ctx("t1", "A latte, please.", scenario=scenario))
     assert "vi_ratio_off" not in events[-1].guard_flags
+
+
+async def test_a_question_asked_only_through_the_tool_is_said(stores, scenario):
+    ask_vi = ("ask_question", {"question": "Em thích làm gì ở biển?", "expected_structure": "x"})
+    provider = FakeProvider([reply("", [ASK]), reply("", [ask_vi])])
+    service = make_service(stores, provider)
+    await open_session(service, scenario)
+
+    events = await collect(service, turn_ctx("t1", "I like the sea", scenario=scenario))
+    segs = [(e.lang, e.text) for e in events if isinstance(e, OutputSegment)]
+    assert segs == [("en", "What did you buy?")]
+    assert "question_only" in events[-1].guard_flags
+    assert "empty_turn" not in events[-1].guard_flags
+    stored = await stores[0].load_messages("s1")
+    assert "What did you buy?" in stored[-1].message.content[0].text
+
+    events = await collect(service, turn_ctx("t2", "Biển đẹp lắm", scenario=scenario))
+    assert [(e.lang, e.text) for e in events if isinstance(e, OutputSegment)] == [
+        ("vi", "Em thích làm gì ở biển?")
+    ]
+
+
+async def test_a_turn_with_no_text_and_no_question_still_gets_the_retry_phrase(stores, scenario):
+    service = make_service(stores, FakeProvider([reply("", [MISTAKE])]))
+    await open_session(service, scenario)
+    events = await collect(service, turn_ctx("t1", "I go there", scenario=scenario))
+    assert "empty_turn" in events[-1].guard_flags
+    assert "question_only" not in events[-1].guard_flags

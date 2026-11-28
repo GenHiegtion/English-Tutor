@@ -356,6 +356,8 @@ class TeacherService:
             if turn.blocked and turn.terminal is not None:
                 turn.tool_statuses[turn.terminal.id] = {"status": "ignored"}
                 turn.terminal = None
+            for out in self._say_unspoken_question(turn):
+                yield out
             self._finalize_flags(turn, stored, user_msg)
             for out in self._fallback_phrases(turn):
                 yield out
@@ -496,6 +498,27 @@ class TeacherService:
             turn.flags.append("unclosed_tag")
         if turn.stop == "max_tokens":
             turn.flags.append("max_tokens")
+
+    def _say_unspoken_question(self, turn: _Turn) -> list[TeacherEvent]:
+        """Say the ``ask_question`` question when the model called the tool but wrote nothing.
+
+        Some models (seen with the GPT fallback) answer with tool calls only. The question is
+        the line the learner should see, so it goes out through the normal segment guards
+        instead of the generic retry phrase.
+        """
+        terminal = turn.terminal
+        if turn.model_segments or turn.blocked or terminal is None:
+            return []
+        if terminal.name != "ask_question":
+            return []
+        question = str(terminal.args.get("question") or "").strip()
+        if not question:
+            return []
+        lang = "vi" if guards.looks_vietnamese(question) else "en"
+        events = self._emit_segment(turn, Segment(seq=0, lang=lang, text=question))
+        if turn.model_segments:
+            turn.flags.append("question_only")
+        return events
 
     def _fallback_phrases(self, turn: _Turn) -> list[TeacherEvent]:
         """Fixed lines for a refused or empty turn; they are stored in the history too."""

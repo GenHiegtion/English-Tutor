@@ -322,6 +322,7 @@ def render_report(
         ("No correction of correct sentences", _rate(results, "no_correction"), "≥ 95%"),
         ("English within CEFR level", (flag_free("cefr_overshoot"), len(turns)), "≥ 95%"),
         ("Length within limit (no too_long)", (flag_free("too_long"), len(turns)), ""),
+        ("Wrote its own text (no question_only)", (flag_free("question_only"), len(turns)), ""),
     ]
     out += ["", "| Metric | Result | Target |", "| --- | --- | --- |"]
     out += [f"| {label} | {_pct(*rate)} | {target} |" for label, rate, target in metrics]
